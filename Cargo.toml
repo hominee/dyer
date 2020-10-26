@@ -1,0 +1,27 @@
+[package]
+name = "wb0"
+version = "0.1.0"
+authors = ["captain"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+serde= {version="1.0", features=["derive"]}
+serde_json='*'
+tokio={ version = "0.3", features = [ "macros", "signal", "rt", "fs", "time", "process", "sync", "rt-multi-thread" ] }
+crossbeam-utils="0.8"
+futures="0.3"
+hyper = "0.13.8"
+hyper-tls="0.4"
+#brotli2='*'
+#flate2='*'
+bytes="0.5.6"
+signal-hook="0.1"
+config="0.10"
+chrono="0.4"
+log="0.4"
+log4rs={version="0.13", features=[]}
+
+
+

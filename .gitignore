@@ -1,0 +1,6 @@
+/target
+C:Userscaptainvimfilessessionsdefault.vim
+Cargo.lock
+data/
+log/
+src/.* 
