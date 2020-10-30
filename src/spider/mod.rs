@@ -10,7 +10,7 @@ pub use parse::{fake, get_parser};
 use crate::item::{Profile, ResError, Response, Task};
 use hyper::{client::HttpConnector, Client as hClient};
 use hyper_tls::HttpsConnector;
-
+use hyper_timeout::TimeoutConnector;
 use std::error::Error;
 use std::fmt::Debug;
 use std::sync::{Arc, Mutex};
@@ -20,7 +20,7 @@ use std::sync::{Arc, Mutex};
 pub trait Entry {
     fn start_request(
         &self,
-        client: hClient<HttpsConnector<HttpConnector>>,
+        client: hClient<TimeoutConnector< HttpsConnector<HttpConnector> >>,
         response: Arc<Mutex< Vec<Response> >> 
     );
 }

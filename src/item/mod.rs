@@ -5,9 +5,9 @@ mod task;
 mod weibo;
 
 pub use profile::Profile;
-pub use request::Request;
-pub use response::Response;
-pub use task::Task;
+pub use request::{Request, RawRequest};
+pub use response::{Response};
+pub use task::{Task, RawTask};
 pub use weibo::*;
 
 use crate::spider::ParseError;

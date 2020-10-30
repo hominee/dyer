@@ -7,6 +7,5 @@ pub fn database(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let len = entities.lock().unwrap().len();
     debug!("receive {} entities. and stored in database.", len);
-    drop(len);
     Ok(())
 }

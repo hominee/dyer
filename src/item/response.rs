@@ -8,6 +8,7 @@ use crate::spider::{parse::get_parser, Entity, ParseError};
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
 use hyper::Client as hClient;
+use hyper_timeout::TimeoutConnector;
 use std::collections::HashMap;
 //use std::time::{SystemTime, UNIX_EPOCH};
 use bytes::buf::ext::BufExt;
@@ -39,7 +40,7 @@ impl Response {
 
     pub async fn exec(
         req: hRequest<hBody>,
-        client: &hClient<HttpsConnector<HttpConnector>>,
+        client: &hClient<TimeoutConnector< HttpsConnector<HttpConnector> >>,
     ) -> Result<(Option<String>, HashMap<String, String>, usize), ResError> {
         let response = client.request(req).await.unwrap();
         let (header, bd) = response.into_parts();
@@ -71,7 +72,7 @@ impl Response {
 
     pub async fn exec_one(
         req: Request,
-        client: hClient<HttpsConnector<HttpConnector>>,
+        client: &hClient<TimeoutConnector< HttpsConnector<HttpConnector> >>,
     ) -> Result<Response, ResError> {
         let mut r = Response::default(Some(&req));
         let req = req.init().unwrap();
@@ -93,7 +94,7 @@ impl Response {
     // FIXME it's not necessary to return Result, Vec<> will be fine.
     pub async fn exec_all(
         reqs: Vec<Request>,
-        client: hClient<HttpsConnector<HttpConnector>>,
+        client: hClient<TimeoutConnector< HttpsConnector<HttpConnector> >>,
         result:  Arc<Mutex< Vec< Response > >> 
     )  {
         let mut v = Vec::new();

@@ -5,6 +5,7 @@ extern crate log4rs;
 extern crate config;
 extern crate log;
 extern crate signal_hook;
+extern crate hyper_timeout;
 
 mod item;
 mod spider;
@@ -13,20 +14,23 @@ mod pipeline;
 
 use pipeline::{database, yield_parse_err};
 use config::Config;
-use item::{Profile, ResError,  Request, Response, Task};
+use item::{Profile, ResError,  Request, Response, Task,RawTask};
 use log::{debug, error, info, trace, warn};
 use spider::{App, fake, Entry, Entity, Parse};
 use hyper::{Client as hClient, body::Body as hBody, client::HttpConnector};
 use hyper_tls::HttpsConnector;
+use hyper_timeout::TimeoutConnector;
 use futures::future::join_all;
 use futures::executor::block_on;
 use std::sync::{Arc, Mutex, atomic::{AtomicUsize, Ordering} };
 use signal_hook::flag as signal_flag;
 use tokio::task;
 use tokio::task::JoinHandle;
+use tokio::runtime::Builder;
+use futures::Future;
 
-
-fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+#[ tokio::main ]
+async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     //init log4rs "Hello  rust"
     log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
 
@@ -37,7 +41,11 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // hyper client intial
     let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-    let client: hClient<HttpsConnector<HttpConnector>> = hClient::builder().build::<_,hBody>(https);
+    let mut conn = hyper_timeout::TimeoutConnector::new(https);
+    conn.set_connect_timeout(Some(std::time::Duration::from_secs(7)));
+    conn.set_read_timeout(Some(std::time::Duration::from_secs(23)));
+    conn.set_write_timeout(Some(std::time::Duration::from_secs(7)));
+    let client: hClient<TimeoutConnector<  HttpsConnector<HttpConnector> >> = hClient::builder().build::<_,hBody>(conn);
 
     let app = App::init();
     let base_reqs: Arc<Mutex< Vec<Request> >> = Arc::new(Mutex::new( Vec::new() )); 
@@ -47,20 +55,20 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let base_res: Arc<Mutex< Vec<Response> >> = Arc::new(Mutex::new( Vec::new() ));
     let base_yield_err:Arc<Mutex< Vec<String> >> = Arc::new(Mutex::new( Vec::new() )); 
     let base_result: Arc<Mutex< Vec<Entity> >> = Arc::new(Mutex::new( Vec::new() ));
-    let fut_res: Arc<Mutex< Vec<task::JoinHandle<()>> >> = Arc::new(Mutex::new( Vec::new() ));
-    let fut_profile: Arc<Mutex< Vec<task::JoinHandle<()>> >> = Arc::new(Mutex::new( Vec::new() ));
+    let fut_res: Arc<Mutex< Vec<task::JoinHandle< () >> >> = Arc::new(Mutex::new( Vec::new() ));
+    let fut_profile: Arc<Mutex< Vec<task::JoinHandle< () >> >> = Arc::new(Mutex::new( Vec::new() ));
     //number that once for a concurrent future poll
-    let round_req = 100;  // consume req one time
-    let round_req_min = 300; // cache request minimal length
-    let round_req_max = 700; // cache request maximal length
-    let round_task = 100; // construct req from task one time
-    let round_task_min = 7; // minimal task(profile) consumed per round
-    let round_res = 100; // consume response once upon a time
-    let profile_min = 3000; // minimal profile number
-    let profile_max = 10000; // maximal profile number
-    let round_yield_err = 100; // consume yield_err once upon a time
-    let round_result = 100; // consume Entity once upon a time
-
+    let round_req: usize = 100;  // consume req one time
+    let round_req_min: usize= 300; // cache request minimal length
+    let round_req_max: usize = 700; // cache request maximal length
+    let round_task: usize = 100; // construct req from task one time
+    let round_task_min: usize = 7; // minimal task(profile) consumed per round
+    let round_res: usize = 100; // consume response once upon a time
+    let profile_min: usize = 3000; // minimal profile number
+    let profile_max: usize = 10000; // maximal profile number
+    let round_yield_err: usize = 100; // consume yield_err once upon a time
+    let round_result: usize = 100; // consume Entity once upon a time
+    let len_out_yield_err: usize = 70;
 
     let mut setting = Config::default();
     setting.merge(config::File::with_name("setting")).unwrap();
@@ -131,15 +139,7 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
            let cf = base_profile.clone(); 
            prof.push(fake(&client, cf ));
         }
-       let profs = block_on(  join_all(prof) );
-       profs.into_iter().for_each(|p| {
-           match p {
-               Some(d) => {
-                   let _t = base_profile.lock().unwrap().push(d);
-               }
-               None => {}
-           }
-       });
+       block_on(  join_all(prof) );
        let cfut_res = base_res.clone();
        app.start_request( client.clone(), cfut_res );
        let cfut_res = base_res.clone();
@@ -190,10 +190,21 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         match term.load(Ordering::Relaxed) {
             SIGINT => {
-                // receive the EXIT signal 
+                // receive the Ctrl+c signal 
                 // by default  request  task profile and result yield err are going to stroed into
                 // file
 
+                //finish remaining futures
+                let mut v = Vec::new();
+                while let Some(res) = cfut_res.lock().unwrap().pop() {
+                    //res.await;
+                    v.push(res);
+                };
+                join_all(v).await;
+
+                // dispath them 
+                
+                //store them
                 Request::stored(cbase_reqs);
                 Task::stored(cbase_tasks);
                 Profile::stored(cbase_profile);
@@ -286,6 +297,14 @@ fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         }
                         Err(_) => {}
                     }});
+
+                //pipeline put out yield_parse_err and Entity 
+                if cbase_yield_err.lock().unwrap().len() > len_out_yield_err {
+                    yield_parse_err(cbase_yield_err);
+                }
+                if cbase_result.lock().unwrap().len() > len_out_yield_err {
+                    database(cbase_result);
+                }
 
                 // count for profiles length if not more than round_task_min
                 if round_task_min > cbase_profile.lock().unwrap().len() {

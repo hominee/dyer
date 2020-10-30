@@ -9,7 +9,6 @@ mode = "development"
 #    3 for Task summary, Request summary, Item summary Profile notified, more with 2
 #    4 for Task Request Item details and Profile summary more with 3
 #    5 for Task, Request, Result, Profile details more with 4
-debug_level = 3
 
 #specify the output Profile directory
 path_profile = "data/profile"

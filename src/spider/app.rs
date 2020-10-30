@@ -9,6 +9,7 @@ use futures::executor::block_on;
 use futures::future::join_all;
 use hyper::{client::HttpConnector, Client as hClient};
 use hyper_tls::HttpsConnector;
+use hyper_timeout::TimeoutConnector;
 use serde::{Deserialize, Serialize};
 use std::sync::{Arc, Mutex};
 
@@ -33,7 +34,7 @@ impl App {
 impl Entry for App {
     fn start_request(
         &self,
-        client: hClient<HttpsConnector<HttpConnector>>,
+        client: hClient<TimeoutConnector< HttpsConnector<HttpConnector> >>,
         response: Arc<Mutex< Vec<Response> >> 
     ) {
         //the started url that spark the crawler
