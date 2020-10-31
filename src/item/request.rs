@@ -51,6 +51,41 @@ pub struct RawRequest {
 unsafe impl Send for Request {}
 
 impl Request {
+
+    /// based on the length of both profiles and tasks 
+    /// to restrict the gen size of request
+    /// the num should be provided
+    pub fn gen(profiles: Arc<Mutex< Vec<Profile> >>, tasks: Arc<Mutex< Vec<Task> >>, req: Arc<Mutex< Vec<Request> >>, now: u64, round: usize) {
+        //split them into two parts
+        let mut ind = Vec::new();
+        let mut ndy = Vec::new();
+        let mut j = 0;
+
+        let len_p = profiles.lock().unwrap().len();
+        let len_t = tasks.lock().unwrap().len();
+        let len = len_t.min( len_p );
+        for i in 0..round.min(len) {
+            let p = &profiles.lock().unwrap()[i];
+            if p.able <= now {
+                ind.push(i-j);
+                j += 1;
+            }
+        }
+
+        ind.into_iter().for_each(|index|{
+            let mut req = Request::default();
+            let p = profiles.lock().unwrap().remove(index);
+            let task = tasks.lock().unwrap().pop().unwrap();
+            req.from_task(task);
+            req.from_profile(p);
+            ndy.push(req);
+        });
+        req.lock().unwrap().extend(ndy);
+    }
+}
+
+
+impl Request {
     pub fn init(self) -> Option<hRequest<hBody>> {
         let mut builder = hRequest::builder();
         // initialize headers

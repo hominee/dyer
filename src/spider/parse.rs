@@ -6,16 +6,9 @@ extern crate hyper_tls;
 use crate::item::{Profile, Task};
 use crate::spider::{Entity, ParseError};
 use hyper::{client::HttpConnector, Client as hClient};
-use hyper_tls::HttpsConnector;
 use hyper_timeout::TimeoutConnector;
+use hyper_tls::HttpsConnector;
 use std::sync::{Arc, Mutex};
-
-pub async fn fake(_client: &hClient<TimeoutConnector<  HttpsConnector<HttpConnector> >>, 
-                  profiles: Arc<Mutex< Vec<Profile> >> )  {
-    //fake a profile here
-    // load user_agent;
-
-}
 
 pub fn get_parser(
     index: String,

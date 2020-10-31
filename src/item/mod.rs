@@ -2,12 +2,14 @@ mod profile;
 mod request;
 mod response;
 mod task;
+mod useragent;
 mod weibo;
 
 pub use profile::Profile;
-pub use request::{Request, RawRequest};
-pub use response::{Response};
-pub use task::{Task, RawTask};
+pub use request::{RawRequest, Request};
+pub use response::Response;
+pub use task::{RawTask, Task};
+pub use useragent::UserAgent;
 pub use weibo::*;
 
 use crate::spider::ParseError;
