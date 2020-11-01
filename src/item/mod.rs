@@ -6,9 +6,9 @@ mod useragent;
 mod weibo;
 
 pub use profile::Profile;
-pub use request::{RawRequest, Request};
+pub use request::{ Request};
 pub use response::Response;
-pub use task::{RawTask, Task};
+pub use task::{Task};
 pub use useragent::UserAgent;
 pub use weibo::*;
 

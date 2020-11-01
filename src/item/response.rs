@@ -29,8 +29,7 @@ pub struct Response {
     pub method: String,
     pub cookie: HashMap<String, String>,
     pub created: u64,
-    pub raw_parser: String,
-    pub parser: Box<dyn Fn(String) -> Result<(Vec<Entity>, Vec<Task>), ParseError> + Send>,
+    pub parser: String, 
     pub args: HashMap<String, Vec<String>>,
     pub msg: Option<String>,
 }
@@ -145,7 +144,7 @@ impl Drop for Response {
                 "method: {}, created: {}, parser: {}, args: {:?}",
                 self.method,
                 self.created,
-                self.raw_parser,
+                self.parser,
                 self.args
             );
         } else if status >= 200 {
@@ -155,7 +154,7 @@ impl Drop for Response {
                 "method: {}, created: {}, parser: {}, args: {:?}",
                 self.method,
                 self.created,
-                self.raw_parser,
+                self.parser,
                 self.args
             );
         } else if status >= 100 {
@@ -165,11 +164,11 @@ impl Drop for Response {
                 "method: {}, created: {}, parser: {}, args: {:?}",
                 self.method,
                 self.created,
-                self.raw_parser,
+                self.parser,
                 self.args
             );
         } else {
-            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, parser: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.raw_parser, self.args );
+            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, parser: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.parser, self.args );
         }
     }
 }
@@ -182,8 +181,7 @@ impl Response {
                 method: r.method.clone(),
                 cookie: r.cookie.clone().unwrap(),
                 created: r.created.clone(),
-                parser: get_parser(r.raw_parser.clone()),
-                raw_parser: r.raw_parser.clone(),
+                parser: r.parser.clone(),
                 args: r.args.clone().unwrap(),
                 msg: None,
                 body: r.body.clone().unwrap(),
@@ -202,8 +200,7 @@ impl Response {
                 method: "".to_owned(),
                 cookie: HashMap::new(),
                 created: 0,
-                parser: get_parser("".to_owned()),
-                raw_parser: "".to_owned(),
+                parser: "".to_owned(),
                 args: HashMap::new(),
                 msg: None,
             },
@@ -235,9 +232,8 @@ impl Response {
                     body: Some(self.body.clone()),
                     headers: Some(pheaders),
                     able: now + 20,
-                    raw_parser: self.raw_parser.clone(),
+                    parser: self.parser.clone(),
                     args: Some(self.args.clone()),
-                    parser: get_parser(self.raw_parser.clone()),
                 };
                 debug!("convert a response to task and profile.");
                 return Some((task, profile));

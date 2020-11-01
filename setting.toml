@@ -13,6 +13,9 @@ mode = "development"
 #specify the output Profile directory
 path_profile = "data/profile"
 
+#specify the User Agent file
+path_ua = "data/useragent/user-agents.json"
+
 #specify the output Task directory
 path_task = "data/task"
 
@@ -23,7 +26,7 @@ path_request = "data/request"
 path_result = "data/result"
 
 #start new session and direct to start_request
-skip_history = false
+skip_history = true
 
 # LOG CONFIGURATION #FIXME to merge log4rs config with this file
 

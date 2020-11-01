@@ -3,6 +3,7 @@ extern crate serde_json;
 
 use crate::item::{Profile, Request, ResError, Response, Task};
 use crate::middleware::{hand0, hand100, hand300, hand400, hand500, hand_res, process_item_name1};
+use crate::spider::get_parser;
 use crate::spider::{Entry, Parse, ParseError};
 use futures::executor::block_on;
 use futures::future::join_all;
@@ -16,7 +17,7 @@ use tokio::task;
 #[derive(Debug, Clone)]
 pub struct App {
     pub urls: Vec<String>,
-    pub raw_parsers: Vec<String>,
+    pub parsers: Vec<String>,
 }
 
 impl App {
@@ -27,8 +28,8 @@ impl App {
             "https://weibo.cn".to_owned(),
             "https://weibo.com".to_owned(),
         ];
-        let raw_parsers = vec!["parse_index1".to_owned(), "parse_index2".to_owned()];
-        App { urls, raw_parsers }
+        let parsers = vec!["parse_index1".to_owned(), "parse_index2".to_owned()];
+        App { urls, parsers }
     }
 
     /// the url that Profile make
@@ -72,7 +73,7 @@ impl App {
             let (_, handle) = pfile.lock().unwrap().remove(ind);
             handle_r.push(handle)
         });
-        join_all(handle_r);
+        block_on( join_all(handle_r) );
     }
 }
 
@@ -86,14 +87,14 @@ impl Entry for App {
         //the started url that spark the crawler
         let mut reqs: Vec<Request> = Vec::new();
         let mut urls = self.urls.to_owned();
-        let mut raw_parsers = self.raw_parsers.to_owned();
+        let mut parsers = self.parsers.to_owned();
         for _ in 0..urls.len() {
             // fake a profile
             let mut req: Request = Request::default();
             let url = urls.pop().unwrap();
-            let raw_parser = raw_parsers.pop().unwrap();
+            let parser = parsers.pop().unwrap();
             req.uri = url.to_owned();
-            req.raw_parser = raw_parser;
+            req.parser = parser;
             let profile = profiles.lock().unwrap().pop().unwrap();
             req.from_profile(profile); //FIXME what if some profile fails
             reqs.push(req);
@@ -205,7 +206,7 @@ impl Parse for App {
                 yield_err: None,
             };
             let content = res.content.to_owned().unwrap();
-            let data = (res.parser)(content.clone());
+            let data = (get_parser(&res.parser))(content.clone());
             match data {
                 Ok(mut v) => {
                     process_item_name1(&mut v.0);
@@ -214,7 +215,7 @@ impl Parse for App {
                 Err(_e) => {
                     // no entities comes in.
                     // leave None as default.
-                    let s = format!("{}\n{}\n{}", res.uri, res.raw_parser, content);
+                    let s = format!("{}\n{}\n{}", res.uri, res.parser, content);
                     r.yield_err = Some(s);
                 }
             }
@@ -248,7 +249,6 @@ impl Parse for App {
                    if let Some(en) = d.entities {
                        // pipeline out put the entities
                        entities.lock().unwrap().extend(en.into_iter());
-                       //database(en);
                    }
                }
                Err(_e) => {

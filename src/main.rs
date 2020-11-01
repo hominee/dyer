@@ -19,7 +19,7 @@ use futures::Future;
 use hyper::{body::Body as hBody, client::HttpConnector, Client as hClient};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use item::{Profile, RawTask, Request, ResError, Response, Task, UserAgent};
+use item::{Profile, Request, Response, Task, UserAgent};
 use log::{debug, error, info, trace, warn};
 use pipeline::{database, yield_parse_err};
 use signal_hook::flag as signal_flag;
@@ -77,7 +77,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("{:?}", setting);
     // load User Agent
     let path_ua = setting.get_str("path_ua").unwrap();
-    base_ua.extend(UserAgent::load(path_ua));
+    *Arc::get_mut( &mut base_ua ).unwrap() = UserAgent::load(path_ua);
 
     let skip_history = setting.get_bool("skip_history").unwrap_or(false);
     if !skip_history {
@@ -103,7 +103,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 error!(
                     "cannot load Request, check the setting.yaml for path_requst to settle this."
                 );
-                panic!("cannotload Request from file or not configurated.");
+                //panic!("cannotload Request from file or not configurated.");
             }
         }
         //load `Task`
@@ -118,7 +118,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             }
             None => {
                 error!("cannot load ,Task check the setting.yaml for path_Task settle this.");
-                panic!("cannotload Task from file or not configurated.")
+                //panic!("cannotload Task from file or not configurated.")
             }
         }
         //load `Profile`
@@ -135,7 +135,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 error!(
                     "cannot load , Profile check the setting.yaml for path_profile settle this."
                 );
-                panic!("cannotload Profile from file or not configurated.")
+                //panic!("cannotload Profile from file or not configurated.")
             }
         }
     } else {
@@ -181,8 +181,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 join_all(v).await;
 
                 // dispath them
+                App::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999);
 
                 //store them
+                Request::stored(cbase_reqs_tmp);
                 Request::stored(cbase_reqs);
                 Task::stored(cbase_tasks);
                 Profile::stored(cbase_profile);
@@ -197,6 +199,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     && cbase_result.lock().unwrap().is_empty()
                     && cbase_profile.lock().unwrap().is_empty()
                 {
+                    info!("All work is Done. exit gracefully");
                     break;
                 }
 

@@ -23,6 +23,8 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Request {
     pub uri: String,
     pub method: String,
@@ -31,21 +33,7 @@ pub struct Request {
     pub body: Option<std::collections::HashMap<String, String>>,
     pub able: u64,
     pub created: u64,
-    pub parser: Box<dyn Fn(String) -> Result<(Vec<Entity>, Vec<Task>), ParseError>>,
-    pub raw_parser: String,
-    pub args: Option<HashMap<String, Vec<String>>>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct RawRequest {
-    pub uri: String,
-    pub method: String,
-    pub headers: Option<std::collections::HashMap<String, String>>,
-    pub cookie: Option<std::collections::HashMap<String, String>>,
-    pub body: Option<std::collections::HashMap<String, String>>,
-    pub able: u64,
-    pub created: u64,
-    pub raw_parser: String,
+    pub parser: String,
     pub args: Option<HashMap<String, Vec<String>>>,
 }
 unsafe impl Send for Request {}
@@ -159,7 +147,7 @@ impl Default for Request {
                 .to_owned(),
         );
         Request {
-            parser: get_parser("".to_owned()),
+            parser: "".to_owned(),
             uri: "".to_owned(),
             method: "GET".to_owned(),
             headers: Some(headers),
@@ -167,7 +155,6 @@ impl Default for Request {
             body: None,
             able: now,
             created: now,
-            raw_parser: "".to_owned(),
             args: None,
         }
     }
@@ -181,9 +168,11 @@ impl Request {
         let file = fs::File::open(path).unwrap();
         let mut writer = LineWriter::new(file);
         reqs.lock().unwrap().iter().for_each(|req| {
-            serde_json::to_writer(&mut writer, &Request::into_raw(req)).unwrap();
+            serde_json::to_writer(&mut writer, req).unwrap();
         });
     }
+
+    
     pub fn load() -> Option<Vec<Request>> {
         let mut setting = Config::default();
         setting
@@ -210,8 +199,7 @@ impl Request {
                         let buf = BufReader::new(content).lines();
                         let mut data: Vec<Request> = Vec::new();
                         buf.into_iter().for_each(|line| {
-                            let raw_req: RawRequest = serde_json::from_str(&line.unwrap()).unwrap();
-                            let req = Request::from_raw(raw_req);
+                            let req: Request = serde_json::from_str(&line.unwrap()).unwrap();
                             data.push(req);
                         });
                         // remove request_old file and rename current file to old file
@@ -261,33 +249,5 @@ impl Request {
             self.able = task.able;
         }
     }
-    pub fn from_raw(raw_req: RawRequest) -> Request {
-        let parser = get_parser(raw_req.raw_parser.clone());
-        Request {
-            parser,
-            uri: raw_req.uri,
-            method: raw_req.method,
-            body: raw_req.body,
-            headers: raw_req.headers,
-            cookie: raw_req.cookie,
-            able: raw_req.able,
-            created: raw_req.created,
-            raw_parser: raw_req.raw_parser,
-            args: raw_req.args,
-        }
-    }
 
-    pub fn into_raw(req: &Request) -> RawRequest {
-        RawRequest {
-            uri: req.uri.clone(),
-            method: req.method.clone(),
-            body: req.body.clone(),
-            headers: req.headers.clone(),
-            cookie: req.cookie.clone(),
-            able: req.able.clone(),
-            created: req.created.clone(),
-            raw_parser: req.raw_parser.clone(),
-            args: req.args.clone(),
-        }
-    }
 }

@@ -11,13 +11,13 @@ use hyper_tls::HttpsConnector;
 use std::sync::{Arc, Mutex};
 
 pub fn get_parser(
-    index: String,
+    index: &str,
 ) -> Box<dyn Fn(String) -> Result<(Vec<Entity>, Vec<Task>), ParseError> + Send> {
-    if index == "parse_index1".to_owned() {
+    if index == "parse_index1" {
         Box::new(parse_index1)
-    } else if index == "parse_index2".to_owned() {
+    } else if index == "parse_index2"{
         Box::new(parse_index2)
-    } else if index == "parse_index3".to_owned() {
+    } else if index == "parse_index3"{
         Box::new(parse_index3)
     } else {
         Box::new(parse_default)
