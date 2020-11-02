@@ -8,7 +8,7 @@ extern crate serde;
 extern crate serde_json;
 
 use crate::spider::{parse::get_parser, Entity};
-use crate::{item::ParseError, Profile, Task};
+use crate::item::{ParseError,TArgs, Profile, PArgs, Task};
 use config::Config;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
@@ -29,12 +29,15 @@ pub struct Request {
     pub uri: String,
     pub method: String,
     pub headers: Option<std::collections::HashMap<String, String>>,
+    pub pheaders: std::collections::HashMap<String, String>,
+    pub theaders: std::collections::HashMap<String, String>,
     pub cookie: Option<std::collections::HashMap<String, String>>,
     pub body: Option<std::collections::HashMap<String, String>>,
     pub able: u64,
     pub created: u64,
     pub parser: String,
-    pub args: Option<HashMap<String, Vec<String>>>,
+    pub targs: Option<TArgs>,
+    pub pargs: Option<PArgs>
 }
 unsafe impl Send for Request {}
 
@@ -126,10 +129,6 @@ impl Request {
 
 impl Default for Request {
     fn default() -> Self {
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
             "Accept".to_owned(),
@@ -151,11 +150,14 @@ impl Default for Request {
             uri: "".to_owned(),
             method: "GET".to_owned(),
             headers: Some(headers),
+            pheaders: HashMap::new(),
+            theaders: HashMap::new(),
             cookie: None,
             body: None,
-            able: now,
-            created: now,
-            args: None,
+            able: 0,
+            created: 0,
+            targs: None,
+            pargs: None,
         }
     }
 }
@@ -226,23 +228,27 @@ impl Request {
             self.cookie = profile.cookie;
         }
         if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(profile.headers.unwrap());
+            headers.extend(profile.headers.clone() .unwrap());
+            if let Some( p ) = profile.headers { self.pheaders = p; }
         } else {
             self.headers = profile.headers;
         }
         if self.able < profile.able {
             self.able = profile.able;
         }
+        self.created = profile.created;
+        self.pargs = profile.pargs;
     }
     pub fn from_task(&mut self, task: Task) {
         self.uri = task.uri;
         self.method = task.method;
         if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(task.headers.unwrap());
+            headers.extend(task.headers.clone() .unwrap());
+            if let Some(t) = task.headers { self.theaders = t; } ;
         } else {
             self.headers = task.headers;
         }
-        self.args = task.args;
+        self.targs = task.targs;
         self.parser = task.parser;
         self.body = task.body;
         if self.able < task.able {

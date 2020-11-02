@@ -3,7 +3,7 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::item::{Profile, Request, ResError, Task};
+use crate::item::{Profile, PArgs,  Request, ResError, Task, TArgs};
 use crate::spider::{parse::get_parser, Entity, ParseError};
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
@@ -21,6 +21,8 @@ use std::sync::{Arc, Mutex};
 
 pub struct Response {
     pub headers: HashMap<String, String>,
+    pub pheaders: HashMap<String, String>,
+    pub theaders: HashMap<String, String>,
     pub status: usize,
     pub content: Option<String>,
 
@@ -30,8 +32,10 @@ pub struct Response {
     pub cookie: HashMap<String, String>,
     pub created: u64,
     pub parser: String, 
-    pub args: HashMap<String, Vec<String>>,
+    pub targs: Option<TArgs>,
     pub msg: Option<String>,
+
+    pub pargs: Option<PArgs>,
 }
 
 impl Response {
@@ -145,7 +149,7 @@ impl Drop for Response {
                 self.method,
                 self.created,
                 self.parser,
-                self.args
+                self.targs
             );
         } else if status >= 200 {
             info!("status: {}, url: {} <++>", self.status, self.uri);
@@ -155,7 +159,7 @@ impl Drop for Response {
                 self.method,
                 self.created,
                 self.parser,
-                self.args
+                self.targs
             );
         } else if status >= 100 {
             warn!("status: {}, url: {} <++>", self.status, self.uri);
@@ -165,10 +169,10 @@ impl Drop for Response {
                 self.method,
                 self.created,
                 self.parser,
-                self.args
+                self.targs
             );
         } else {
-            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, parser: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.parser, self.args );
+            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, parser: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.parser, self.targs );
         }
     }
 }
@@ -182,16 +186,22 @@ impl Response {
                 cookie: r.cookie.clone().unwrap(),
                 created: r.created.clone(),
                 parser: r.parser.clone(),
-                args: r.args.clone().unwrap(),
+                targs: r.targs.clone(),
                 msg: None,
                 body: r.body.clone().unwrap(),
 
                 content: None,
                 headers: r.headers.clone().unwrap(),
+                pheaders: r.pheaders.clone(),
+                theaders: r.theaders.clone(),
                 status: 0,
+
+                pargs: r.pargs.clone(),
             },
             None => Response {
                 headers: HashMap::new(),
+                pheaders: HashMap::new(),
+                theaders: HashMap::new(),
                 status: 0,
                 content: None,
 
@@ -201,8 +211,10 @@ impl Response {
                 cookie: HashMap::new(),
                 created: 0,
                 parser: "".to_owned(),
-                args: HashMap::new(),
+                targs: None,
                 msg: None,
+                pargs: None,
+
             },
         }
     }
@@ -215,16 +227,14 @@ impl Response {
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs() as u64;
-                let task_index = self.args.get("task").unwrap();
-                let mut pheaders = self.headers.clone();
-                let mut theaders = self.headers.clone();
-                pheaders.retain(|k, _| task_index.contains(&k));
-                theaders.retain(|k, _| !task_index.contains(&k));
+                let pheaders = self.pheaders.clone();
+                let theaders = self.theaders.clone();
                 let profile = Profile {
                     cookie: Some(self.cookie.clone()),
                     headers: Some(theaders),
                     able: now + 20,
                     created: self.created,
+                    pargs: self.pargs.clone(),
                 };
                 let task = Task {
                     uri: self.uri.clone(),
@@ -233,7 +243,7 @@ impl Response {
                     headers: Some(pheaders),
                     able: now + 20,
                     parser: self.parser.clone(),
-                    args: Some(self.args.clone()),
+                    targs: self.targs.clone(),
                 };
                 debug!("convert a response to task and profile.");
                 return Some((task, profile));

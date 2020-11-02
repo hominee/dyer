@@ -197,11 +197,11 @@ impl Parse for App {
         } else {
             // status code between 200 - 299
             hand_res::pre_hand_res(&mut res);
-            let t = res._into().unwrap();
+            let (_, p) = res._into().unwrap();
             let mut r = ParseResult {
                 req: None,
-                task: Some(vec![t.0]),
-                profile: Some(t.1),
+                task: None,
+                profile: Some(p),
                 entities: None,
                 yield_err: None,
             };

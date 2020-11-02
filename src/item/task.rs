@@ -22,8 +22,11 @@ pub struct Task {
     pub body: Option<HashMap<String, String>>,
     pub able: u64,
     pub parser: String,
-    pub args: Option<HashMap<String, Vec<String>>>,
+    pub targs: Option<TArgs>,
 }
+
+#[derive(Deserialize, Clone, Debug, Serialize)]
+pub struct TArgs {}
 
 impl Task {
     pub fn stored(task: Arc<Mutex<Vec<Task>>>) {

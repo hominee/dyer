@@ -29,6 +29,28 @@ pub struct Profile {
     pub cookie: Option<HashMap<String, String>>,
     pub able: u64,
     pub created: u64,
+    pub pargs: Option<PArgs>,
+}
+
+///the structure buffer that customize your needs
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PArgs {
+    pub typ: ProfileType,
+    pub inteval: Interval,
+    pub expire: u64,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum Interval {
+    Light,
+    Middle,
+    Night,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub enum ProfileType {
+    Web,
+    Mobile,
 }
 
 impl Profile {
@@ -36,21 +58,33 @@ impl Profile {
         req: hRequest<hBody>,
         client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
     ) -> Result<Profile, ResError> {
+        let mut p = Profile::default();
+        let mut hd = p.headers.unwrap();
+        let ua = req.headers().get("User-Agent").unwrap().clone().to_str().unwrap().to_string();
+        hd.insert("User-Agent".to_string(), ua );
         let r = client.request(req).await;
         match r {
             Ok(res) => {
                 let (bd, _) = res.into_parts();
                 let raw_headers = bd.headers;
 
+                let stop_word = ["path",  "expires", "domain", "httpOnly"];
                 let mut cookie = HashMap::new();
                 raw_headers.into_iter().for_each(|(k, v)| {
                     let key = k.unwrap().to_string().to_lowercase();
                     if key == "set-cookie".to_string() {
-                        cookie.insert(key, v.to_str().unwrap().to_string());
+                        let val = v.to_str().unwrap();
+                        let v_str: Vec<&str> = val.split(";").filter(|c| !stop_word.contains(c) ).collect();
+                        v_str.into_iter().for_each(|pair|{
+                            let tmp: Vec<&str> = pair.split("=").collect();
+                            if tmp.len() == 2 {
+                                cookie.insert(tmp[1].to_string(), tmp[2].to_string() );
+                            }
+                        });
                     }
                 });
-                let mut p = Profile::default();
                 p.cookie = Some(cookie);
+                p.headers = Some( hd );
                 Ok(p)
             }
             Err(e) => {
@@ -187,6 +221,7 @@ impl Default for Profile {
             cookie: None,
             able: now,
             created: now,
+            pargs: None,
         }
     }
 }
