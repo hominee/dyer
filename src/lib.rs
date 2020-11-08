@@ -7,31 +7,28 @@ extern crate serde_json;
 extern crate signal_hook;
 extern crate tokio;
 
-mod item;
-mod middleware;
-mod pipeline;
-mod spider;
+pub mod item;
+pub mod middleware;
+pub mod pipeline;
+pub mod spider;
 
 use config::Config;
-use futures::executor::block_on;
 use futures::future::join_all;
-use futures::Future;
 use hyper::{body::Body as hBody, client::HttpConnector, Client as hClient};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use item::{Profile, Request, Response, Task, UserAgent};
+use item::{Profile, Parse,  Entity, Request, Response, Task, UserAgent};
 use log::{debug, error, info, trace, warn};
 use pipeline::{database, yield_parse_err};
 use signal_hook::flag as signal_flag;
-use spider::{App, Entity, Entry, Parse};
+use spider::{App, Entry };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use tokio::task;
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     //init log4rs "Hello  rust"
     log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
 
@@ -49,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let client: hClient<TimeoutConnector<HttpsConnector<HttpConnector>>> =
         hClient::builder().build::<_, hBody>(conn);
 
-    let app = App::init();
+    let app = App::new();
     let base_reqs: Arc<Mutex<Vec<Request>>> = Arc::new(Mutex::new(Vec::new()));
     let base_reqs_tmp: Arc<Mutex<Vec<Request>>> = Arc::new(Mutex::new(Vec::new()));
     let base_tasks: Arc<Mutex<Vec<Task>>> = Arc::new(Mutex::new(Vec::new()));
@@ -141,12 +138,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     } else {
         //skip the history and start new fields
         //to staart with, some Profile required
-        let uri = App::start_page("weibo");
+        let uri = App::entry_profile();
         let uas = base_ua.clone();
-        Profile::exec_all(&client, base_profile.clone(), uri, 77, uas).await;
+        Profile::exec_all(&client, base_profile.clone(), uri, 7, uas).await;
+        panic!("{:?}", base_profile);
+
+
+
         let cfut_res = base_res.clone();
-        app.start_request(client.clone(), cfut_res, base_profile.clone());
-        App::parse_all(base_res.clone(), base_reqs.clone(), base_tasks.clone(), base_profile.clone(), base_result.clone(), base_yield_err.clone(), round_res );
+        let tasks = app.entry_task();
+        base_tasks.lock().unwrap().extend(tasks);
     }
 
     loop {
@@ -164,7 +165,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as u64;
+            .as_secs();
 
         match term.load(Ordering::Relaxed) {
             SIGINT => {
@@ -181,7 +182,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 join_all(v).await;
 
                 // dispath them
-                App::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999);
+                Response::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999);
 
                 //store them
                 Request::stored(cbase_reqs_tmp);
@@ -242,14 +243,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     let tbase_profile = base_profile.clone();
                     let uas = base_ua.clone();
                     let johp = task::spawn(async move {
-                        Profile::exec_all(&fclient, tbase_profile, App::start_page("weibo"), 7, uas).await;
+                        Profile::exec_all(&fclient, tbase_profile, App::entry_profile(), 7, uas).await;
                     });
                     cfut_profile.lock().unwrap().push( (now, johp) );
                 }
 
                 // parse response
                 //extract the parseResult
-                App::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res);
+                Response::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res);
 
                 //pipeline put out yield_parse_err and Entity
                 if cbase_yield_err.lock().unwrap().len() > round_yield_err {
@@ -271,7 +272,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 Request::gen(cbase_profile.clone(), cbase_tasks.clone(), cbase_reqs.clone(), now, round_task);
 
                 //join the older tokio-task
-                App::join(cfut_res.clone(), cfut_profile.clone());
+                Response::join(cfut_res.clone(), cfut_profile.clone());
 
             }
             _ => unreachable!(),

@@ -1,6 +1,6 @@
 [package]
-name = "wb0"
-version = "0.1.0"
+name = "crawler"
+version = "0.1.1"
 authors = ["captain"]
 edition = "2018"
 
@@ -23,6 +23,7 @@ config="0.10"
 chrono="0.4"
 log="0.4"
 log4rs={version="0.13", features=[]}
+rand="*"
 
 
 

@@ -22,6 +22,7 @@ use std::fmt::Debug;
 use std::io::LineWriter;
 use std::sync::{Arc, Mutex};
 use futures::executor::block_on;
+use rand::Rng;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Profile {
@@ -71,10 +72,10 @@ impl Profile {
                 let stop_word = ["path",  "expires", "domain", "httpOnly"];
                 let mut cookie = HashMap::new();
                 raw_headers.into_iter().for_each(|(k, v)| {
-                    let key = k.unwrap().to_string().to_lowercase();
+                    let key = k.unwrap().to_string().trim().to_lowercase();
                     if key == "set-cookie".to_string() {
                         let val = v.to_str().unwrap();
-                        let v_str: Vec<&str> = val.split(";").filter(|c| !stop_word.contains(c) ).collect();
+                        let v_str: Vec<&str> = val.split(";").filter(|c| !stop_word.contains( &c.trim() )).collect();
                         v_str.into_iter().for_each(|pair|{
                             let tmp: Vec<&str> = pair.split("=").collect();
                             if tmp.len() == 2 {
@@ -105,13 +106,9 @@ impl Profile {
         let mut vreq = Vec::new();
         vec![0; num].iter().for_each(|_| {
             // select a ua
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            let len = uas.len() as u64;
-            let ind = (now % len) as usize;
-            let ua = uas[ind].clone().userAgent;
+            let len = uas.len();
+            let ind = rand::thread_rng().gen_range(0, len-1);
+            let ua = uas[ind].clone().user_agent;
             // construct a new reqeust
             let mut req = Request::default();
             req.uri = uri.clone();

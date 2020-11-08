@@ -1,14 +1,15 @@
 use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::io::{BufRead, BufReader};
+use std::io::{BufReader};
 
 #[derive(Serialize, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct UserAgent {
-    pub userAgent: String,
+    pub user_agent: String,
     pub weight: f64,
     pub platform: String,
-    pub deviceCategory: String,
+    pub device_category: String,
 }
 
 impl UserAgent {

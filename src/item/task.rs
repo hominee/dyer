@@ -2,8 +2,6 @@ extern crate config;
 extern crate serde;
 extern crate serde_json;
 
-use crate::spider::get_parser;
-use crate::spider::{Entity, ParseError};
 use config::Config;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -81,5 +79,19 @@ impl Task {
         }
     }
 
+}
 
+impl Default for Task {
+    fn default() -> Self {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+        Task{
+            uri: "".to_string(),
+            method: "GET".to_string(),
+            headers: None,
+            body: None,
+            able: now,
+            parser: "".to_string(),
+            targs: None,
+        }
+    }
 }

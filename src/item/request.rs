@@ -7,8 +7,7 @@ extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
-use crate::spider::{parse::get_parser, Entity};
-use crate::item::{ParseError,TArgs, Profile, PArgs, Task};
+use crate::item::{TArgs, Profile, PArgs, Task};
 use config::Config;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
@@ -21,7 +20,6 @@ use std::io::LineWriter;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 
 #[derive(Serialize, Deserialize, Debug)]

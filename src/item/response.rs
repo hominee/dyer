@@ -3,8 +3,9 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::item::{Profile, PArgs,  Request, ResError, Task, TArgs};
-use crate::spider::{parse::get_parser, Entity, ParseError};
+use crate::item::{Profile, PArgs, ParseError, Request, ResError, Task, TArgs};
+use crate::middleware::{hand0, hand100, hand300, hand400, hand500, hand_res, process_item_name1};
+use crate::spider::{parse::get_parser };
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
 use hyper::Client as hClient;
@@ -18,6 +19,29 @@ use futures::future::join_all;
 use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};
 use hyper_tls::HttpsConnector;
 use std::sync::{Arc, Mutex};
+use tokio::task;
+use futures::executor::block_on;
+use serde::{Serialize, Deserialize};
+
+///all item prototypes intented to collected
+#[derive(Debug, Serialize, Deserialize)]
+pub enum Entity {}
+
+pub struct ParseResult {
+    pub req: Option<Request>,
+    pub task: Option<Vec<Task>>,
+    pub profile: Option<Profile>,
+    pub entities: Option<Vec<Entity>>,
+    pub yield_err: Option<String>,
+}
+
+///the trait that parse the response
+pub trait Parse {
+
+    fn parse(body: Response) -> Result<ParseResult, ParseError>;
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize  );
+
+}
 
 pub struct Response {
     pub headers: HashMap<String, String>,
@@ -131,6 +155,186 @@ impl Response {
         }
         result.lock().unwrap().extend(rs);
     }
+
+    ///join spawned tokio-task
+    pub fn join(
+        res: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>,
+        pfile: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>
+    ) {
+        let mut ind_r: Vec<usize> = Vec::new();
+        let mut handle_r = Vec::new();
+        let mut j = 0;
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u64;
+        res.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
+            if now - r.0 >= 30 {
+                ind_r.push(ind-j);
+                j += 1;
+            }
+        });
+        ind_r.into_iter().for_each(|ind|{
+            let (_, handle) = res.lock().unwrap().remove(ind);
+            handle_r.push(handle)
+        });
+
+        let mut ind_p: Vec<usize> = Vec::new();
+        let mut j = 0;
+        pfile.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
+            if now - r.0 >= 30 {
+                ind_p.push(ind-j);
+                j += 1;
+            }
+        });
+        ind_p.into_iter().for_each(|ind|{
+            let (_, handle) = pfile.lock().unwrap().remove(ind);
+            handle_r.push(handle)
+        });
+        block_on( join_all(handle_r) );
+    }
+}
+
+
+impl Parse for Response {
+    fn parse(mut res: Response) -> Result<ParseResult, ParseError> {
+        //dispath handlers dependent on their status code
+        let status = res.status;
+        if status >= 500usize {
+            let r = hand500(res);
+            match r {
+                Some(r) => Ok( ParseResult{
+                    req: None,
+                    task: Some(vec![r.0]),
+                    profile: Some(r.1),
+                    entities: None,
+                    yield_err: None,
+                }),
+                None => Err(ParseError {
+                    desc: "status 500 - 599, not good".to_owned(),
+                }),
+            }
+        } else if status >= 400usize {
+            let r = hand400(res);
+            match r {
+                Some(r) => Ok(ParseResult {
+                    req: None,
+                    task: Some(vec![r.0]),
+                    profile: Some(r.1),
+                    entities: None,
+                    yield_err: None,
+                }),
+                None => Err(ParseError {
+                    desc: "status 400 - 499, not good".to_owned(),
+                }),
+            }
+        } else if status >= 300usize {
+            let r = hand300(res);
+            match r {
+                Some(r) => Ok(ParseResult {
+                    req: None,
+                    task: Some(vec![r.0]),
+                    profile: Some(r.1),
+                    entities: None,
+                    yield_err: None,
+                }),
+                None => Err(ParseError {
+                    desc: "status  300 - 399 not good".to_owned(),
+                }),
+            }
+        } else if status == 0usize {
+            // only initialized and not modified
+            // corroputed response caused this
+            // recycle the Task and increase the error counter in Profile
+            let r = hand0(res);
+            match r {
+                None => Err(ParseError {
+                    desc: "status within 0, not good".to_owned(),
+                }),
+                Some(data) => Ok(ParseResult {
+                    req: None,
+                    task: Some(vec![data.0]),
+                    profile: Some(data.1),
+                    entities: None,
+                    yield_err: None,
+                }),
+            }
+        } else if status < 200usize {
+            let r = hand100(res);
+            match r {
+                Some(r) => Ok(ParseResult {
+                    req: Some(r),
+                    task: None,
+                    profile: None,
+                    entities: None,
+                    yield_err: None,
+                }),
+                None => Err(ParseError {
+                    desc: " status within 100 - 199, not good".to_owned(),
+                }),
+            }
+        } else {
+            // status code between 200 - 299
+            hand_res::pre_hand_res(&mut res);
+            let (_, p) = res._into().unwrap();
+            let mut r = ParseResult {
+                req: None,
+                task: None,
+                profile: Some(p),
+                entities: None,
+                yield_err: None,
+            };
+            let content = res.content.to_owned().unwrap();
+            let data = (get_parser(&res.parser))(content.clone());
+            match data {
+                Ok(mut v) => {
+                    process_item_name1(&mut v.0);
+                    r.entities = Some(v.0);
+                }
+                Err(_e) => {
+                    // no entities comes in.
+                    // leave None as default.
+                    let s = format!("{}\n{}\n{}", res.uri, res.parser, content);
+                    r.yield_err = Some(s);
+                }
+            }
+            return Ok(r);
+        }
+    }
+
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize  )  {
+        let mut v = Vec::new();
+        let len = vres.lock().unwrap().len();
+        vec![0; len.min(round) ].iter().for_each(|_|{
+            let t = vres.lock().unwrap().pop().unwrap();
+            v.push(t);
+        });
+        v.into_iter().for_each(| res |{
+            match Response::parse(res) {
+
+               Ok(d) => {
+                   if let Some(da) = d.profile {
+                       vpfile.lock().unwrap().push(da);
+                   }
+                   if let Some(ta) = d.task {
+                       vtask.lock().unwrap().extend(ta);
+                   }
+                   if let Some(re) = d.req {
+                       vreq.lock().unwrap().push(re);
+                   }
+                   if let Some(err) = d.yield_err {
+                       yield_err.lock().unwrap().push(err);
+                   }
+                   if let Some(en) = d.entities {
+                       // pipeline out put the entities
+                       entities.lock().unwrap().extend(en.into_iter());
+                   }
+               }
+               Err(_e) => {
+                           // res has err code (non-200) and cannot handled by error handle
+                           // discard the response that without task or profile.
+               }
+            }
+        });
+    }
+
 }
 
 impl Drop for Response {

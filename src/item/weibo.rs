@@ -1,4 +1,4 @@
-use crate::spider::Entity;
+use crate::item::Entity;
 use crate::{Profile, Request, Response, Task};
 
 pub struct PaerseResult {

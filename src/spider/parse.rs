@@ -3,12 +3,8 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::item::{Profile, Task};
-use crate::spider::{Entity, ParseError};
+use crate::item::{Entity,ParseError, Task};
 use hyper::{client::HttpConnector, Client as hClient};
-use hyper_timeout::TimeoutConnector;
-use hyper_tls::HttpsConnector;
-use std::sync::{Arc, Mutex};
 
 pub fn get_parser(
     index: &str,

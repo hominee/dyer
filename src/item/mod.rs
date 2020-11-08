@@ -7,12 +7,11 @@ mod weibo;
 
 pub use profile::{ PArgs, Profile };
 pub use request::{ Request};
-pub use response::Response;
+pub use response::{Response, Parse,  Entity};
 pub use task::{Task, TArgs};
 pub use useragent::UserAgent;
 pub use weibo::*;
 
-use crate::spider::ParseError;
 use std::error::Error;
 use std::fmt::Debug;
 
@@ -27,6 +26,17 @@ impl std::fmt::Display for PfileError {
 }
 impl Error for PfileError {}
 
+#[derive(Debug)]
+pub struct ParseError {
+    pub desc: String,
+}
+impl std::fmt::Display for ParseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Parse Error.")
+    }
+}
+
+impl Error for ParseError {}
 #[derive(Debug)]
 pub struct ReqError {
     pub desc: String,
