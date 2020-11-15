@@ -4,13 +4,15 @@ mod response;
 mod task;
 mod useragent;
 mod weibo;
+mod parser;
 
 pub use profile::{ PArgs, Profile };
 pub use request::{ Request};
-pub use response::{Response, Parse,  Entity};
+pub use response::{Response, ParseResult, Parse,  Entity};
 pub use task::{Task, TArgs};
 pub use useragent::UserAgent;
 pub use weibo::*;
+pub use parser::Parser;
 
 use std::error::Error;
 use std::fmt::Debug;

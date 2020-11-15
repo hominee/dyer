@@ -99,7 +99,7 @@ impl Profile {
     pub async fn exec_all(
         client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
         profiles: Arc<Mutex<Vec<Profile>>>,
-        uri: String,
+        uri: &str,
         num: usize,
         uas: Arc< Vec<UserAgent> >,
     ) {
@@ -111,7 +111,7 @@ impl Profile {
             let ua = uas[ind].clone().user_agent;
             // construct a new reqeust
             let mut req = Request::default();
-            req.uri = uri.clone();
+            req.uri = uri.clone().to_string();
             let mut hd = req.headers.unwrap();
             hd.insert("User-Agent".to_string(), ua);
             req.headers = Some(hd);

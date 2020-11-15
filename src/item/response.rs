@@ -3,7 +3,8 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::item::{Profile, PArgs, ParseError, Request, ResError, Task, TArgs};
+use crate::item::{Profile, PArgs, ParseError, Parser, Request, ResError, Task, TArgs};
+use crate::spider::S as Sapp;
 use crate::middleware::{hand0, hand100, hand300, hand400, hand500, hand_res, process_item_name1};
 use crate::spider::{parse::get_parser };
 use log::{debug, error, info, trace, warn};
@@ -34,12 +35,14 @@ pub struct ParseResult {
     pub entities: Option<Vec<Entity>>,
     pub yield_err: Option<String>,
 }
+unsafe impl Sync for ParseResult {}
+unsafe impl Send for ParseResult{}
 
 ///the trait that parse the response
 pub trait Parse {
 
-    fn parse(body: Response) -> Result<ParseResult, ParseError>;
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize  );
+    fn parse(body: Response, app: &'static Sapp ) -> Result<ParseResult, ParseError>;
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static Sapp);
 
 }
 
@@ -56,11 +59,14 @@ pub struct Response {
     pub cookie: HashMap<String, String>,
     pub created: u64,
     pub parser: String, 
+    pub fparser: Parser,
     pub targs: Option<TArgs>,
     pub msg: Option<String>,
 
     pub pargs: Option<PArgs>,
 }
+unsafe impl Sync for Response {}
+unsafe impl Send for Response{}
 
 impl Response {
     ///this function require a `hyper::Request` and `hyper::Client` to return the Response
@@ -194,7 +200,7 @@ impl Response {
 
 
 impl Parse for Response {
-    fn parse(mut res: Response) -> Result<ParseResult, ParseError> {
+    fn parse(mut res: Response, app: &'static Sapp) -> Result<ParseResult, ParseError> {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status >= 500usize {
@@ -273,7 +279,7 @@ impl Parse for Response {
         } else {
             // status code between 200 - 299
             hand_res::pre_hand_res(&mut res);
-            let (_, p) = res._into().unwrap();
+            let (_, p) : (Task, Profile)= res.into1().unwrap();
             let mut r = ParseResult {
                 req: None,
                 task: None,
@@ -281,17 +287,23 @@ impl Parse for Response {
                 entities: None,
                 yield_err: None,
             };
-            let content = res.content.to_owned().unwrap();
-            let data = (get_parser(&res.parser))(content.clone());
+            //let content = res.content.to_owned().unwrap();
+            let data = (&res.fparser.data)(app, &res);
             match data {
-                Ok(mut v) => {
-                    process_item_name1(&mut v.0);
-                    r.entities = Some(v.0);
+                Ok(v) => {
+                    match v.entities {
+                        Some(mut en) => {
+                            process_item_name1(&mut en);
+                            r.entities = Some(en);
+                        }
+                        None => {}
+                    }
                 }
-                Err(_e) => {
+                Err(_) => {
                     // no entities comes in.
                     // leave None as default.
-                    let s = format!("{}\n{}\n{}", res.uri, res.parser, content);
+                    let content = res.content.clone().unwrap();
+                    let s = format!("{}\n{}\n{}", &res.uri, &res.parser, content);
                     r.yield_err = Some(s);
                 }
             }
@@ -299,7 +311,7 @@ impl Parse for Response {
         }
     }
 
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize  )  {
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static Sapp)  {
         let mut v = Vec::new();
         let len = vres.lock().unwrap().len();
         vec![0; len.min(round) ].iter().for_each(|_|{
@@ -307,7 +319,7 @@ impl Parse for Response {
             v.push(t);
         });
         v.into_iter().for_each(| res |{
-            match Response::parse(res) {
+            match Response::parse(res, app) {
 
                Ok(d) => {
                    if let Some(da) = d.profile {
@@ -390,6 +402,7 @@ impl Response {
                 cookie: r.cookie.clone().unwrap(),
                 created: r.created.clone(),
                 parser: r.parser.clone(),
+                fparser: Parser::default(),
                 targs: r.targs.clone(),
                 msg: None,
                 body: r.body.clone().unwrap(),
@@ -415,6 +428,7 @@ impl Response {
                 cookie: HashMap::new(),
                 created: 0,
                 parser: "".to_owned(),
+                fparser: Parser::default(),
                 targs: None,
                 msg: None,
                 pargs: None,
@@ -423,7 +437,7 @@ impl Response {
         }
     }
 
-    pub fn _into(&self) -> Option<(Task, Profile)> {
+    pub fn into1(&self) -> Option<(Task, Profile)> {
         match self.content {
             None => return None,
             Some(_) => {
@@ -447,6 +461,7 @@ impl Response {
                     headers: Some(pheaders),
                     able: now + 20,
                     parser: self.parser.clone(),
+                    fparser: Parser::get(&self.parser),
                     targs: self.targs.clone(),
                 };
                 debug!("convert a response to task and profile.");
