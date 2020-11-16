@@ -8,7 +8,7 @@ use crate::item::{ParseResult, Response};
 use crate::spider::S as Sapp;
 use crate::spider::{MSpider};
 
-type Item = &'static dyn Fn(&'static Sapp , &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
+type Item = &'static dyn Fn(&Sapp , &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
 
 #[derive(Deserialize, Serialize)]
 pub struct Parser {
@@ -29,7 +29,6 @@ where D: Deserializer<'de>, {
 fn serialize_data<S>(d:&Box<Item>, serializer: S) -> Result<S::Ok, S::Error> 
 where S: Serializer {
     let name = Sapp::fmap( d );
-    //let name = "parse";
     let mut s = serializer.serialize_struct("Parser", 1)?;
     s.serialize_field("data", &name).unwrap();
     s.end()
@@ -52,8 +51,10 @@ impl Default for Parser {
 }
 impl std::fmt::Debug for Parser {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let d = &self.data;
+        let name = Sapp::fmap( d );
         f.debug_struct("Parser")
-            .field("data", &"Box<Item>")
+            .field("data", &name)
             .finish()
     }
 }
