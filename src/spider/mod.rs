@@ -5,11 +5,12 @@ pub mod app;
 pub mod parse;
 
 //pub use app::{App, Spider}; 
-pub use parse::{get_parser};
 
 use crate::item::{Profile, ParseError, Response, Task};
 use crate::item::ParseResult;
 use serde::{Serialize, Deserialize};
+use crate::item::Parser;
+use std::sync::Once;
 
 
 ///the trait that make sure App has an entry
@@ -43,11 +44,11 @@ macro_rules! spd {
         $(pub fn $func2: ident(&self, $($arg2_name: ident : $arg2_type: ty),*) -> $res2:ty $bk2: block )*
     }
     ) => {
-        #[derive(Serialize, Deserialize)]
+        #[derive(Serialize, std::fmt::Debug, Deserialize)]
         pub struct $name {
             $($field_name: $field_type),*
         }
-        type Item =dyn Fn(&'static $name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
+        type Item =dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
         type Sitem<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
         pub trait Spider {
             $(
@@ -62,23 +63,40 @@ macro_rules! spd {
         pub trait MSpider {
             fn entry_profile(&self,) -> Sitem<&'static str> ;
             fn entry_task(&self,) -> Sitem<Vec<Task>> ;
-            fn fields() -> Vec<&'static str>;
-            fn methods() -> Vec<&'static str>;
+            fn meta() -> &'static (Vec<&'static str>, Vec<&'static str>);
+            fn methods() -> &'static Vec<&'static Item> ;
             fn get_parser(ind: &str) -> Option<&'static dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>>; 
             fn map() -> std::collections::HashMap<&'static str, &'static Item>;
-            fn fmap(f: &dyn Fn(&'static $name, &Response) -> Sitem<ParseResult>) -> String;
+            fn fmap(f: &&Item) -> String;
         }
         impl MSpider for $name {
             fn entry_profile(&self,) -> Sitem<&'static str> $profile
 
             fn entry_task(&self,) -> Sitem<Vec<Task>> $task
 
-            fn fields() -> Vec<&'static str> {
-                vec![ $( stringify!($field_name) ),* ]
+            fn meta() -> &'static (Vec<&'static str>, Vec<&'static str>) {
+                static INIT: Once = Once::new();
+                static mut VAL: (Vec<&'static str>, Vec<&'static str>) = ( vec![], vec![] );
+                unsafe{
+                    INIT.call_once(|| {
+                        VAL = (
+                            vec![ $( stringify!($field_name) ),* ],
+                            vec![ $( stringify!($func2),)*]  
+                        );
+                    });
+                    &VAL
+                }
             }
 
-            fn methods() -> Vec<&'static str> {
-                vec![ $( stringify!($func2),)* "entry_profile", "entry_task"  ] 
+            fn methods() -> &'static Vec<&'static Item>  {
+                static INIT: Once = Once::new();
+                static mut VAL: Vec<&'static Item> = vec![];
+                unsafe{
+                    INIT.call_once(|| {
+                        VAL = vec![ $( &$name::$func2 as &'static Item ),*];
+                    });
+                    &VAL
+                }
             }
 
             fn map() -> std::collections::HashMap<&'static str, &'static Item> {
@@ -87,31 +105,47 @@ macro_rules! spd {
                 mp
             }
 
-            fn fmap(f: &dyn Fn(&'static $name, &Response) -> Sitem<ParseResult>) -> String {
-                let v = vec![ $( $name::$func2 as *const &'static dyn Fn(&'static $name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>),*];
+            fn fmap(f: &&Item ) -> String {
+                //let v = vec![ $( $name::$func2 as *const &dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>),*];
+                let v0 = $name::methods();
+                let mut v = Vec::new();
+                v0.into_iter().for_each(|func| {
+                    v.push( *func as *const Item );
+                });
+                println!("vec of pointer: {:?}", v);
+                let vlen = v.len();
                 let mut i = 0;
                 for item in v.into_iter() {
-                    let prt: *const  &dyn Fn(&'static $name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &f;
+                    //let prt: *const  &dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &f;
+                    let prt: *const  dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &**f;
                     let iprt: *const Item = item;
+                    println!("prt: {:?}, iprt: {:?}", prt, iprt);
                     if iprt == prt {
                         break;
                     }else {
                         i += 1;
                     }
                 }
-                let names = vec![ $( stringify!($func2).to_string(),)* ]; 
-                names[i].to_string()
+                let names = &$name::meta().1;
+                println!("in fmap, len: {}, names: {:?}, i:{}", names.len(), names, i);
+                if i == vlen {
+                    panic!("not found the method.")
+                } else {
+                    names[i].to_string()
+                }
 
             }
             fn get_parser(ind: &str) -> Option<&'static dyn Fn(&$name, &Response) -> Sitem<ParseResult>> 
             {
-                let v = vec![ $( &$name::$func2 as 
-                    &'static dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>
-                    ),*];
-                let names = vec![ $( stringify!($func2) ),* ];
+                let v0 = $name::methods();
+                let mut v = Vec::new();
+                v0.into_iter().for_each(|func| {
+                    v.push( *func as &'static Item );
+                });
+                let names = &$name::meta().1;
                 let mut i = 0;
                 for name in names.into_iter() {
-                    if ind == name {
+                    if ind == *name {
                         break;
                     } else {
                         i += 1;
@@ -131,7 +165,6 @@ macro_rules! spd {
 }
 
 
-use crate::item::Parser;
 spd!{
     pub struct S {
         parser: Parser,
@@ -148,11 +181,59 @@ spd!{
         
         pub fn m1(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
             println!("m1 called");
-            Err( Box::new(ParseError{desc: "".to_owned()}) )
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn m2(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("m1 called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn m3(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("m1 called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
         }
 
         pub fn parse(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
-            println!("parse");
+            println!("parse called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+        pub fn parse_index(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("parse called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+        pub fn parse_content(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("parse called");
             Ok( ParseResult{
                 entities: None,
                 profile: None,
@@ -162,8 +243,6 @@ spd!{
             } )
         }
     }
-    //impl Spider for S {
-    //}
 }
 
 
@@ -174,13 +253,22 @@ mod tests {
 
     #[test]
     fn test_spd() {
-        let s = r#"{"parser": {"data": "parse"}}"#;
-        let s1 = r#"{"parser": {"data": "m1"}}"#;
+        let s = r#"{"parser":{"data":"parse"}}"#;
+        let t2 = r#"{"parser":{"data":"parse_index"}}"#;
+        let t3 = r#"{"parser":{"data":"parse_content"}}"#;
+        let s1 = r#"{"parser":{"data":"m1"}}"#;
+        let s2 = r#"{"parser":{"data":"m2"}}"#;
+        let s3 = r#"{"parser":{"data":"m3"}}"#;
         let ob: S = serde_json::from_str(s).unwrap();
+        let ot2: S = serde_json::from_str(t2).unwrap();
+        let ot3: S = serde_json::from_str(t3).unwrap();
         let ob1: S = serde_json::from_str(s1).unwrap();
+        let ob2: S = serde_json::from_str(s2).unwrap();
+        let ob3: S = serde_json::from_str(s3).unwrap();
         let ss = S{
             parser: Parser{
-                data: Box::new( &S::parse ),
+                //data: Box::new( &S::parse ),
+                data:  &S::parse 
             }
         };
         let res = Response{
@@ -195,19 +283,24 @@ mod tests {
             method: "GET".to_string(),
             cookie: HashMap::new(),
             created: 64,
-            parser: "parse".to_string(), 
-            fparser: Parser{ data: Box::new( &S::parse ) },
+            fparser: Parser{ data:  &S::parse  },
             targs: None,
             msg: None,
 
             pargs: None,
         };
         let r1 = (ob.parser.data)(&ob, &res).unwrap();
-        let r3 = (ob.parser.data)(&ob1, &res).unwrap();
+        let r3 = (ob1.parser.data)(&ob1, &res).unwrap();
         let r2 = (ss.parser.data)(&ss, &res).unwrap();
         println!("r1:{:?}\nr2:{:?}", r1.yield_err,r2.yield_err);
         println!("r3:{:?}", r3.entities);
-        //(ob.parser.data)(&ob, &res);
-        //assert_eq!( r1, r2);
+
+        assert_eq!(s, serde_json::to_string(&ob).unwrap());
+        println!("ob1: {:?}", ob1);
+        assert_eq!(s1, serde_json::to_string(&ob1).unwrap());
+        assert_eq!(s2, serde_json::to_string(&ob2).unwrap());
+        assert_eq!(t2, serde_json::to_string(&ot2).unwrap());
+        assert_eq!(t3, serde_json::to_string(&ot3).unwrap());
+        assert_eq!(s3, serde_json::to_string(&ob3).unwrap());
     }
 }

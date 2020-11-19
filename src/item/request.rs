@@ -33,7 +33,6 @@ pub struct Request {
     pub body: Option<std::collections::HashMap<String, String>>,
     pub able: u64,
     pub created: u64,
-    pub parser: String,
     pub targs: Option<TArgs>,
     pub pargs: Option<PArgs>
 }
@@ -144,7 +143,6 @@ impl Default for Request {
                 .to_owned(),
         );
         Request {
-            parser: "".to_owned(),
             uri: "".to_owned(),
             method: "GET".to_owned(),
             headers: Some(headers),
@@ -247,7 +245,6 @@ impl Request {
             self.headers = task.headers;
         }
         self.targs = task.targs;
-        self.parser = task.parser;
         self.body = task.body;
         if self.able < task.able {
             self.able = task.able;

@@ -6,7 +6,6 @@ extern crate hyper_tls;
 use crate::item::{Profile, PArgs, ParseError, Parser, Request, ResError, Task, TArgs};
 use crate::spider::S as Sapp;
 use crate::middleware::{hand0, hand100, hand300, hand400, hand500, hand_res, process_item_name1};
-use crate::spider::{parse::get_parser };
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
 use hyper::Client as hClient;
@@ -58,7 +57,6 @@ pub struct Response {
     pub method: String,
     pub cookie: HashMap<String, String>,
     pub created: u64,
-    pub parser: String, 
     pub fparser: Parser,
     pub targs: Option<TArgs>,
     pub msg: Option<String>,
@@ -303,7 +301,7 @@ impl Parse for Response {
                     // no entities comes in.
                     // leave None as default.
                     let content = res.content.clone().unwrap();
-                    let s = format!("{}\n{}\n{}", &res.uri, &res.parser, content);
+                    let s = format!("{}\n{}", &res.uri,content);
                     r.yield_err = Some(s);
                 }
             }
@@ -361,34 +359,31 @@ impl Drop for Response {
             );
             info!("body: {:?}, cookie: {:?} <++>", self.body, self.cookie);
             trace!(
-                "method: {}, created: {}, parser: {}, args: {:?}",
+                "method: {}, created: {}, args: {:?}",
                 self.method,
                 self.created,
-                self.parser,
                 self.targs
             );
         } else if status >= 200 {
             info!("status: {}, url: {} <++>", self.status, self.uri);
             debug!("body: {:?}, cookie: {:?} <++>", self.body, self.cookie);
             trace!(
-                "method: {}, created: {}, parser: {}, args: {:?}",
+                "method: {}, created: {},args: {:?}",
                 self.method,
                 self.created,
-                self.parser,
                 self.targs
             );
         } else if status >= 100 {
             warn!("status: {}, url: {} <++>", self.status, self.uri);
             debug!("body: {:?}, cookie: {:?} <++>", self.body, self.cookie);
             trace!(
-                "method: {}, created: {}, parser: {}, args: {:?}",
+                "method: {}, created: {}, args: {:?}",
                 self.method,
                 self.created,
-                self.parser,
                 self.targs
             );
         } else {
-            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, parser: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.parser, self.targs );
+            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.targs );
         }
     }
 }
@@ -401,7 +396,6 @@ impl Response {
                 method: r.method.clone(),
                 cookie: r.cookie.clone().unwrap(),
                 created: r.created.clone(),
-                parser: r.parser.clone(),
                 fparser: Parser::default(),
                 targs: r.targs.clone(),
                 msg: None,
@@ -427,7 +421,6 @@ impl Response {
                 method: "".to_owned(),
                 cookie: HashMap::new(),
                 created: 0,
-                parser: "".to_owned(),
                 fparser: Parser::default(),
                 targs: None,
                 msg: None,
@@ -460,8 +453,7 @@ impl Response {
                     body: Some(self.body.clone()),
                     headers: Some(pheaders),
                     able: now + 20,
-                    parser: self.parser.clone(),
-                    fparser: Parser::get(&self.parser),
+                    fparser: self.fparser.clone(),
                     targs: self.targs.clone(),
                 };
                 debug!("convert a response to task and profile.");

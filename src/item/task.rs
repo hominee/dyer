@@ -23,8 +23,7 @@ pub struct Task {
     pub headers: Option<HashMap<String, String>>,
     pub body: Option<HashMap<String, String>>,
     pub able: u64,
-    pub parser: String,
-    #[serde(skip)]
+    //#[serde(skip)]
     pub fparser: Parser,
     pub targs: Option<TArgs>,
 }
@@ -97,7 +96,6 @@ impl Default for Task {
             headers: None,
             body: None,
             able: now,
-            parser: "".to_string(),
             fparser: Parser::default(),
             targs: None,
         }
