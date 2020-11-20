@@ -10,8 +10,8 @@ use std::fs;
 use std::io::LineWriter;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::{Arc, Mutex};
-use crate::item::{Response,Parser, ParseResult};
-use crate::spider::Spider;
+use crate::engine::{Response,Parser, ParseResult};
+use crate::engine::Spider;
 
 
 type Item = &'static dyn Fn(&'static dyn Spider, Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;

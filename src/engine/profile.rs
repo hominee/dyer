@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind};
 
-use crate::item::{Request, ResError, UserAgent};
+use crate::engine::{Request, ResError, UserAgent};
 use futures::future::join_all;
 use hyper::Client as hClient;
 use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};
@@ -79,7 +79,7 @@ impl Profile {
                         v_str.into_iter().for_each(|pair|{
                             let tmp: Vec<&str> = pair.split("=").collect();
                             if tmp.len() == 2 {
-                                cookie.insert(tmp[1].to_string(), tmp[2].to_string() );
+                                cookie.insert(tmp[0].to_string(), tmp[1].to_string() );
                             }
                         });
                     }

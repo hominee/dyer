@@ -7,21 +7,20 @@ extern crate serde_json;
 extern crate signal_hook;
 extern crate tokio;
 
-pub mod item;
+pub mod engine;
 pub mod middleware;
 pub mod pipeline;
-pub mod spider;
 
 use config::Config;
 use futures::future::join_all;
 use hyper::{body::Body as hBody, client::HttpConnector, Client as hClient};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use item::{Profile, Parse,  Entity, Request, Response, Task, UserAgent};
+use engine::{Profile, Parse,  Entity, Request, Response, Task, UserAgent};
 use log::{debug, error, info, trace, warn};
 use pipeline::{database, yield_parse_err};
 use signal_hook::flag as signal_flag;
-use spider::{ MSpider, Spider, S as Sapp };
+use engine::{ MSpider, Spider, S as Sapp };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,

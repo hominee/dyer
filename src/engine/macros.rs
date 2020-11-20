@@ -1,26 +1,13 @@
 extern crate serde;
 extern crate serde_json;
 
-pub mod app;
-pub mod parse;
-
-//pub use app::{App, Spider}; 
-
-use crate::item::{Profile, ParseError, Response, Task};
-use crate::item::ParseResult;
+use crate::engine::{Profile, ParseError, Response, Task};
+use crate::engine::ParseResult;
 use serde::{Serialize, Deserialize};
-use crate::item::Parser;
+use crate::engine::Parser;
 use std::sync::Once;
 
 
-///the trait that make sure App has an entry
-///as well as the struct itself
-/*
- *pub trait Entry {
- *    fn entry_profile() -> String;
- *    fn entry_task( &self ) -> Vec<Task>;
- *}
- */
 
 /// the trait that handle the various Response
 /// for status code above 300 or below 200 dispose these

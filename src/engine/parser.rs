@@ -2,10 +2,9 @@ extern crate serde;
 extern crate serde_json;
 
 use serde::{Deserialize, Deserializer, Serializer, Serialize};
-use crate::spider::Spider;
-use crate::item::{ParseResult, Response};
-use crate::spider::S as Sapp;
-use crate::spider::{MSpider};
+use crate::engine::{Spider, ParseResult, Response};
+use crate::engine::{MSpider};
+use crate::engine::S as Sapp;
 
 type Item = &'static dyn Fn(&Sapp , &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
 type Ite = dyn Fn(&Sapp , &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
