@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind};
 
-use crate::engine::{Request, ResError, UserAgent};
+use crate::component::{Request, ResError, UserAgent};
 use futures::future::join_all;
 use hyper::Client as hClient;
 use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};

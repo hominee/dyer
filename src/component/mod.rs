@@ -4,7 +4,7 @@ mod response;
 mod task;
 mod useragent;
 mod parser;
-mod macros;
+mod client;
 
 pub use profile::{ PArgs, Profile };
 pub use request::{ Request};
@@ -12,7 +12,7 @@ pub use response::{Response, ParseResult, Parse,  Entity};
 pub use task::{Task, TArgs};
 pub use useragent::UserAgent;
 pub use parser::Parser;
-pub use macros::{S, Spider, MSpider, HandleErr};
+pub use client::Client;
 
 use std::error::Error;
 use std::fmt::Debug;

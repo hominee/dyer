@@ -1,11 +1,13 @@
+#![feature(type_ascription)]
+
 extern crate bytes;
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::engine::{Profile, PArgs, ParseError, Parser, Request, ResError, Task, TArgs};
-use crate::engine::S as Sapp;
-use crate::middleware::{hand0, hand100, hand300, hand400, hand500, hand_res, process_item_name1};
+use crate::component::{Profile, PArgs, ParseError, Parser, Request, ResError, Task, TArgs};
+use crate::macros::S as Sapp;
+use crate::macros::MiddleWare;
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
 use hyper::Client as hClient;
@@ -16,6 +18,7 @@ use bytes::buf::ext::BufExt;
 use std::io::{BufReader, Read};
 
 use futures::future::join_all;
+use crate::component::Client;
 use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};
 use hyper_tls::HttpsConnector;
 use std::sync::{Arc, Mutex};
@@ -40,8 +43,8 @@ unsafe impl Send for ParseResult{}
 ///the trait that parse the response
 pub trait Parse {
 
-    fn parse(body: Response, app: &'static Sapp ) -> Result<ParseResult, ParseError>;
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static Sapp);
+    fn parse(body: Response, app: &'static Sapp, mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError>;
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static Sapp, mware: &dyn MiddleWare);
 
 }
 
@@ -71,8 +74,8 @@ impl Response {
 
     pub async fn exec(
         req: hRequest<hBody>,
-        client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
     ) -> Result<(Option<String>, HashMap<String, String>, usize), ResError> {
+        let client = &Client::new()[0];
         let response = client.request(req).await.unwrap();
         let (header, bd) = response.into_parts();
         let bod = hyper::body::aggregate(bd).await;
@@ -103,11 +106,10 @@ impl Response {
 
     pub async fn exec_one(
         req: Request,
-        client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
     ) -> Result<Response, ResError> {
         let mut r = Response::default(Some(&req));
         let req = req.init().unwrap();
-        let response = Response::exec(req, &client).await;
+        let response = Response::exec(req).await;
 
         match response {
             Ok(data) => {
@@ -125,7 +127,6 @@ impl Response {
     // FIXME it's not necessary to return Result, Vec<> will be fine.
     pub async fn exec_all(
         reqs: Vec<Request>,
-        client: hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
         result: Arc<Mutex<Vec<Response>>>,
     ) {
         let mut v = Vec::new();
@@ -139,7 +140,7 @@ impl Response {
 
         let mut futs = Vec::new();
         v.into_iter().for_each(|req| {
-            let fut = Response::exec(req, &client);
+            let fut = Response::exec(req);
             futs.push(fut);
         });
         let mut res = join_all(futs).await;
@@ -198,85 +199,12 @@ impl Response {
 
 
 impl Parse for Response {
-    fn parse(mut res: Response, app: &'static Sapp) -> Result<ParseResult, ParseError> {
+    fn parse(mut res: Response, app: &'static Sapp, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> {
         //dispath handlers dependent on their status code
         let status = res.status;
-        if status >= 500usize {
-            let r = hand500(res);
-            match r {
-                Some(r) => Ok( ParseResult{
-                    req: None,
-                    task: Some(vec![r.0]),
-                    profile: Some(r.1),
-                    entities: None,
-                    yield_err: None,
-                }),
-                None => Err(ParseError {
-                    desc: "status 500 - 599, not good".to_owned(),
-                }),
-            }
-        } else if status >= 400usize {
-            let r = hand400(res);
-            match r {
-                Some(r) => Ok(ParseResult {
-                    req: None,
-                    task: Some(vec![r.0]),
-                    profile: Some(r.1),
-                    entities: None,
-                    yield_err: None,
-                }),
-                None => Err(ParseError {
-                    desc: "status 400 - 499, not good".to_owned(),
-                }),
-            }
-        } else if status >= 300usize {
-            let r = hand300(res);
-            match r {
-                Some(r) => Ok(ParseResult {
-                    req: None,
-                    task: Some(vec![r.0]),
-                    profile: Some(r.1),
-                    entities: None,
-                    yield_err: None,
-                }),
-                None => Err(ParseError {
-                    desc: "status  300 - 399 not good".to_owned(),
-                }),
-            }
-        } else if status == 0usize {
-            // only initialized and not modified
-            // corroputed response caused this
-            // recycle the Task and increase the error counter in Profile
-            let r = hand0(res);
-            match r {
-                None => Err(ParseError {
-                    desc: "status within 0, not good".to_owned(),
-                }),
-                Some(data) => Ok(ParseResult {
-                    req: None,
-                    task: Some(vec![data.0]),
-                    profile: Some(data.1),
-                    entities: None,
-                    yield_err: None,
-                }),
-            }
-        } else if status < 200usize {
-            let r = hand100(res);
-            match r {
-                Some(r) => Ok(ParseResult {
-                    req: Some(r),
-                    task: None,
-                    profile: None,
-                    entities: None,
-                    yield_err: None,
-                }),
-                None => Err(ParseError {
-                    desc: " status within 100 - 199, not good".to_owned(),
-                }),
-            }
-        } else {
+        if status <= 299 && status >= 200 {
             // status code between 200 - 299
-            hand_res::pre_hand_res(&mut res);
+            mware.hand_res(&mut res);
             let (_, p) : (Task, Profile)= res.into1().unwrap();
             let mut r = ParseResult {
                 req: None,
@@ -291,7 +219,7 @@ impl Parse for Response {
                 Ok(v) => {
                     match v.entities {
                         Some(mut en) => {
-                            process_item_name1(&mut en);
+                            mware.hand_item(&mut en);
                             r.entities = Some(en);
                         }
                         None => {}
@@ -306,10 +234,24 @@ impl Parse for Response {
                 }
             }
             return Ok(r);
+        } else {
+            let r = mware.hand_err( res );
+            match r {
+                Some(r) => Ok(ParseResult {
+                    task:  r.0,
+                    profile: r.1,
+                    req: r.2,
+                    entities: None,
+                    yield_err: None,
+                }),
+                None => Err(ParseError {
+                    desc: "Non-200s status code , not good".to_owned(),
+                }),
+            }
         }
     }
 
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static Sapp)  {
+    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static Sapp, mware: &dyn MiddleWare)  {
         let mut v = Vec::new();
         let len = vres.lock().unwrap().len();
         vec![0; len.min(round) ].iter().for_each(|_|{
@@ -317,7 +259,7 @@ impl Parse for Response {
             v.push(t);
         });
         v.into_iter().for_each(| res |{
-            match Response::parse(res, app) {
+            match Response::parse(res, app, mware) {
 
                Ok(d) => {
                    if let Some(da) = d.profile {

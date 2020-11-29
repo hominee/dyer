@@ -1,22 +1,13 @@
 extern crate serde;
 extern crate serde_json;
 
-use crate::engine::{Profile, ParseError, Response, Task};
-use crate::engine::ParseResult;
+use crate::component::{Profile, ParseError, Response, Task};
+use crate::component::ParseResult;
 use serde::{Serialize, Deserialize};
-use crate::engine::Parser;
+use crate::component::Parser;
 use std::sync::Once;
 
 
-
-/// the trait that handle the various Response
-/// for status code above 300 or below 200 dispose these
-pub trait HandleErr {
-    fn hand100(&self, res: Response) -> (Task, Profile);
-    fn hand300(&self, res: Response) -> (Task, Profile);
-    fn hand400(&self, res: Response) -> (Task, Profile);
-    fn hand500(&self, res: Response) -> (Task, Profile);
-}
 
 #[macro_export]
 macro_rules! spd {
@@ -30,23 +21,28 @@ macro_rules! spd {
 
         $(pub fn $func2: ident(&self, $($arg2_name: ident : $arg2_type: ty),*) -> $res2:ty $bk2: block )*
     }
+
     ) => {
         #[derive(Serialize, std::fmt::Debug, Deserialize)]
         pub struct $name {
             $($field_name: $field_type),*
         }
+
         type Item =dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
         type Sitem<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+        
         pub trait Spider {
             $(
                 fn $func2(&self, $($arg2_name: $arg2_type)*) -> $res2 ;
             )*
         }
+
         impl Spider for $name {
             $(
                 fn $func2(&self, $($arg2_name: $arg2_type)*) -> $res2 $bk2
             )*
         }
+
         pub trait MSpider {
             fn entry_profile(&self,) -> Sitem<&'static str> ;
             fn entry_task(&self,) -> Sitem<Vec<Task>> ;
@@ -56,6 +52,7 @@ macro_rules! spd {
             fn map() -> std::collections::HashMap<&'static str, &'static Item>;
             fn fmap(f: &&Item) -> String;
         }
+
         impl MSpider for $name {
             fn entry_profile(&self,) -> Sitem<&'static str> $profile
 
@@ -93,7 +90,6 @@ macro_rules! spd {
             }
 
             fn fmap(f: &&Item ) -> String {
-                //let v = vec![ $( $name::$func2 as *const &dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>),*];
                 let v0 = $name::methods();
                 let mut v = Vec::new();
                 v0.into_iter().for_each(|func| {
@@ -103,7 +99,6 @@ macro_rules! spd {
                 let vlen = v.len();
                 let mut i = 0;
                 for item in v.into_iter() {
-                    //let prt: *const  &dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &f;
                     let prt: *const  dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &**f;
                     let iprt: *const Item = item;
                     println!("prt: {:?}, iprt: {:?}", prt, iprt);
@@ -120,8 +115,8 @@ macro_rules! spd {
                 } else {
                     names[i].to_string()
                 }
-
             }
+
             fn get_parser(ind: &str) -> Option<&'static dyn Fn(&$name, &Response) -> Sitem<ParseResult>> 
             {
                 let v0 = $name::methods();
@@ -156,6 +151,7 @@ spd!{
     pub struct S {
         parser: Parser,
     }
+
     impl S {
         pub fn entry_profile(&self,) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
             println!("profile");
@@ -219,6 +215,7 @@ spd!{
                 yield_err: None,
             } )
         }
+
         pub fn parse_content(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
             println!("parse called");
             Ok( ParseResult{

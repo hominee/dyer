@@ -10,8 +10,8 @@ use std::fs;
 use std::io::LineWriter;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::sync::{Arc, Mutex};
-use crate::engine::{Response,Parser, ParseResult};
-use crate::engine::Spider;
+use crate::component::{Response,Parser, ParseResult};
+use crate::macros::Spider;
 
 
 type Item = &'static dyn Fn(&'static dyn Spider, Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
@@ -23,7 +23,6 @@ pub struct Task {
     pub headers: Option<HashMap<String, String>>,
     pub body: Option<HashMap<String, String>>,
     pub able: u64,
-    //#[serde(skip)]
     pub fparser: Parser,
     pub targs: Option<TArgs>,
 }
