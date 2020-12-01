@@ -17,14 +17,14 @@ use crate::component::{Profile, Parse,  Entity, Request, Response, Task, UserAge
 use crate::macros::{MiddleWare, Pipeline};
 use log::{debug, error, info, trace, warn};
 use signal_hook::flag as signal_flag;
-use crate::macros::{ MSpider, Spider, S as Sapp };
+use crate::macros::{ MSpider, Spider, };
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use tokio::task;
 
-pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare, 
+pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'static dyn MiddleWare, 
     pline: &'static dyn Pipeline
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>  
 {
@@ -136,7 +136,8 @@ pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare,
     } else {
         //skip the history and start new fields
         //to staart with, some Profile required
-        let uri = app.entry_profile().unwrap();
+        let uri = <T as Spider>::entry_profile(app).unwrap();
+        //app.entry_profile().unwrap();
         let uas = base_ua.clone();
         Profile::exec_all(&client, base_profile.clone(), uri, 7, uas).await;
         panic!("{:?}", base_profile);
@@ -144,7 +145,7 @@ pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare,
 
 
         let cfut_res = base_res.clone();
-        let tasks = app.entry_task().unwrap();
+        let tasks = <T as Spider>::entry_task(app).unwrap();
         base_tasks.lock().unwrap().extend(tasks);
     }
 
@@ -180,7 +181,7 @@ pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare,
                 join_all(v).await;
 
                 // dispath them
-                Response::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999, app, mware);
+                Response::parse_all::<U>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999, app, mware);
 
                 //store them
                 Request::stored(cbase_reqs_tmp);
@@ -241,7 +242,7 @@ pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare,
                     let fclient = client.clone();
                     let tbase_profile = base_profile.clone();
                     let uas = base_ua.clone();
-                    let uri = app.entry_profile().unwrap();
+                    let uri = <T as Spider>::entry_profile(app).unwrap();
                     let johp = task::spawn(async move {
                         Profile::exec_all(&fclient, tbase_profile, uri, 7, uas).await;
                     });
@@ -250,7 +251,7 @@ pub async fn run( app: &'static Sapp, mware: &dyn MiddleWare,
 
                 // parse response
                 //extract the parseResult
-                Response::parse_all(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res, app, mware);
+                Response::parse_all::<U>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res, app, mware);
 
                 //pipeline put out yield_parse_err and Entity
                 if cbase_yield_err.lock().unwrap().len() > round_yield_err {

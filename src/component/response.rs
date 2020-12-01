@@ -1,17 +1,13 @@
-#![feature(type_ascription)]
-
 extern crate bytes;
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::component::{Profile, PArgs, ParseError, Parser, Request, ResError, Task, TArgs};
-use crate::macros::S as Sapp;
+use crate::component::{Profile, PArgs, ParseError, Request, ResError, Task, TArgs};
 use crate::macros::MiddleWare;
+use crate::macros::{Spider, MSpider};
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
-use hyper::Client as hClient;
-use hyper_timeout::TimeoutConnector;
 use std::collections::HashMap;
 //use std::time::{SystemTime, UNIX_EPOCH};
 use bytes::buf::ext::BufExt;
@@ -19,8 +15,7 @@ use std::io::{BufReader, Read};
 
 use futures::future::join_all;
 use crate::component::Client;
-use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};
-use hyper_tls::HttpsConnector;
+use hyper::{Body as hBody, Request as hRequest};
 use std::sync::{Arc, Mutex};
 use tokio::task;
 use futures::executor::block_on;
@@ -42,28 +37,25 @@ unsafe impl Send for ParseResult{}
 
 ///the trait that parse the response
 pub trait Parse {
+    fn parse<T>(body: Response, app: &dyn Spider, mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError> where T: MSpider+?Sized;
 
-    fn parse(body: Response, app: &'static Sapp, mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError>;
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static Sapp, mware: &dyn MiddleWare);
-
+    fn parse_all<T>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &dyn Spider, mware: &dyn MiddleWare) where T:MSpider+?Sized;
 }
 
-pub struct Response {
+pub struct Response  {
     pub headers: HashMap<String, String>,
     pub pheaders: HashMap<String, String>,
     pub theaders: HashMap<String, String>,
     pub status: usize,
     pub content: Option<String>,
-
     pub body: HashMap<String, String>,
     pub uri: String,
     pub method: String,
     pub cookie: HashMap<String, String>,
     pub created: u64,
-    pub fparser: Parser,
+    pub parser: String,
     pub targs: Option<TArgs>,
     pub msg: Option<String>,
-
     pub pargs: Option<PArgs>,
 }
 unsafe impl Sync for Response {}
@@ -82,7 +74,6 @@ impl Response {
         match bod {
             Ok(body) => {
                 let mut reader = BufReader::new(body.reader());
-
                 let status = header.status.as_u16() as usize;
                 let mut headers: HashMap<String, String> = HashMap::new();
                 header.headers.into_iter().for_each(|(key, value)| {
@@ -199,7 +190,7 @@ impl Response {
 
 
 impl Parse for Response {
-    fn parse(mut res: Response, app: &'static Sapp, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> {
+    fn parse<T>(mut res: Response, app: &dyn Spider, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> where T: MSpider+?Sized {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
@@ -214,7 +205,9 @@ impl Parse for Response {
                 yield_err: None,
             };
             //let content = res.content.to_owned().unwrap();
-            let data = (&res.fparser.data)(app, &res);
+            let ind = &res.parser;
+            let parser = T::get_parser(ind).unwrap();
+            let data = (parser)(app, &res);
             match data {
                 Ok(v) => {
                     match v.entities {
@@ -251,7 +244,7 @@ impl Parse for Response {
         }
     }
 
-    fn parse_all(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static Sapp, mware: &dyn MiddleWare)  {
+    fn parse_all<T>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &dyn Spider, mware: &dyn MiddleWare) where T: MSpider+?Sized {
         let mut v = Vec::new();
         let len = vres.lock().unwrap().len();
         vec![0; len.min(round) ].iter().for_each(|_|{
@@ -259,7 +252,7 @@ impl Parse for Response {
             v.push(t);
         });
         v.into_iter().for_each(| res |{
-            match Response::parse(res, app, mware) {
+            match Response::parse::<T>(res, app, mware) {
 
                Ok(d) => {
                    if let Some(da) = d.profile {
@@ -286,7 +279,6 @@ impl Parse for Response {
             }
         });
     }
-
 }
 
 impl Drop for Response {
@@ -338,7 +330,7 @@ impl Response {
                 method: r.method.clone(),
                 cookie: r.cookie.clone().unwrap(),
                 created: r.created.clone(),
-                fparser: Parser::default(),
+                parser: "parse".to_owned(),
                 targs: r.targs.clone(),
                 msg: None,
                 body: r.body.clone().unwrap(),
@@ -363,7 +355,7 @@ impl Response {
                 method: "".to_owned(),
                 cookie: HashMap::new(),
                 created: 0,
-                fparser: Parser::default(),
+                parser: "parse".to_owned(),
                 targs: None,
                 msg: None,
                 pargs: None,
@@ -395,7 +387,7 @@ impl Response {
                     body: Some(self.body.clone()),
                     headers: Some(pheaders),
                     able: now + 20,
-                    fparser: self.fparser.clone(),
+                    parser: self.parser.clone(),
                     targs: self.targs.clone(),
                 };
                 debug!("convert a response to task and profile.");

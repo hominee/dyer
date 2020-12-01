@@ -2,11 +2,10 @@
 use hyper::{Client as hClient, client::HttpConnector, Body as hBody};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use std::sync::{ Once, Arc};
+use std::sync::Once;
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>; 
 
-#[derive(Copy, Clone)]
 pub struct Client;
 
 impl Client {

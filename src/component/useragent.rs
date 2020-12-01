@@ -20,7 +20,7 @@ impl UserAgent {
                 let data: Vec<UserAgent> = serde_json::from_reader(buf).unwrap();
                 data
             }
-            Err(e) => {
+            Err(_) => {
                 error!("User Agent file must provide!");
                 panic!("User Agent file must provide!");
             }
