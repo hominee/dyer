@@ -6,30 +6,33 @@ use crate::component::ParseResult;
 use serde::{Serialize, Deserialize};
 use std::sync::Once;
 
-
-type Item =dyn Fn(&dyn Spider, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
+type Item<T> =dyn Fn(&T, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
 type Sitem<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
+type Itm<T: 'static> =dyn Fn(&T, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>;
 
 pub trait Spider {
-    fn entry_profile(x: &dyn Spider,) -> Sitem<&'static str> where Self: Sized;
-    fn entry_task(x: &dyn Spider,) -> Sitem<Vec<Task>> where Self: Sized;
-    fn parse(x: &dyn Spider, response: &Response) -> Sitem<ParseResult> where Self: Sized;
+    fn entry_profile(&self) -> Sitem<&str>; 
+    fn entry_task(&self) -> Sitem<Vec<Task>>; 
+    fn parse(&self, response: &Response) -> Sitem<ParseResult>; 
 }
 
 #[derive(std::fmt::Debug)]
-pub struct Mate {
-    fields: Vec<&'static str>,
-    methods: Vec<&'static str>,
-}
+pub struct Mate { }
 
 pub trait MSpider {
     fn meta() -> &'static (Vec<&'static str>, Vec<&'static str>);
-    fn methods() -> &'static Vec<&'static Item> ;
-    fn get_parser(ind: &str) -> Option<&'static dyn Fn(&dyn Spider, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>>; 
-    fn map() -> std::collections::HashMap<&'static str, &'static Item>;
-    fn fmap(f: &&Item) -> String;
+    fn methods<T>() -> &'static Vec<&'static Item<T>> ;
+    fn get_parser<T>(ind: &str) -> Option<&'static dyn Fn(&T, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>>>; 
+    fn map<T>() -> std::collections::HashMap<&'static str, &'static Item<T>>;
+    fn fmap<T>(f: &&Item<T>) -> String where T: 'static ;
 }
 
+/*
+*        pub fn entry_profile(&self,) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> $profile: block
+*
+*        pub fn entry_task(&self,) -> Result<Vec<Task>, Box<dyn std::error::Error + Send + Sync>> $task: block
+*
+*/
 
 #[macro_export]
 macro_rules! spd {
@@ -37,17 +40,27 @@ macro_rules! spd {
         $($field_name: ident : $field_type: ty,)*
     }
     impl $name2: ident {
-        pub fn entry_profile(&self,) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> $profile: block
-
-        pub fn entry_task(&self,) -> Result<Vec<Task>, Box<dyn std::error::Error + Send + Sync>> $task: block
-
         $(pub fn $func2: ident(&self, $($arg2_name: ident : $arg2_type: ty),*) -> $res2:ty $bk2: block )*
     }
 
     ) => {
-        #[derive(Serialize, std::fmt::Debug, Deserialize)]
+        //#[derive(Serialize, std::fmt::Debug, Deserialize)]
         pub struct $name {
             $($field_name: $field_type),*
+        }
+
+        /*
+         *pub trait Spide {
+         *    $(
+         *        fn $func2(&self, $($arg2_name: $arg2_type),*) -> $res2 ;
+         *    )*
+         *}
+         */
+
+        impl $name {
+            $(
+                pub fn $func2(&self, $($arg2_name: $arg2_type),*) -> $res2 $bk2
+            )*
         }
 
         impl MSpider for Mate {
@@ -65,36 +78,40 @@ macro_rules! spd {
                 }
             }
 
-            fn methods() -> &'static Vec<&'static Item>  {
-                static INIT: Once = Once::new();
-                static mut VAL: Vec<&'static Item> = vec![];
-                //vec![ $( &$name::$func2 as &Item ),* ];
-                unsafe{
-                    INIT.call_once(|| {
-                        VAL = vec![ $( &$name::$func2 as &'static Item ),*];
-                    });
-                    &VAL
-                }
+            fn methods<$name>() -> &'static Vec<&'static Item<$name>>  {
+                /*
+                 *static INIT: Once = Once::new();
+                 *static mut VAL: Vec<&'static Item<$name> > = vec![];
+                 *static mut VAL: Vec< &'static dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> > = vec![];
+                 *vec![ $( &$name::$func2 as &Item ),* ];
+                 *unsafe{
+                 *    INIT.call_once(|| {
+                 *        VAL = vec![ $( &$name::$func2 as &'static Item<$name> ),*];
+                 *    });
+                 *    &VAL
+                 *}
+                 */
+                 vec![ $( &$name::$func2 as &'static Item<$name> ),*]
             }
 
-            fn map() -> std::collections::HashMap<&'static str, &'static Item> {
+            fn map<$name>() -> std::collections::HashMap<&'static str, &'static Item<$name>> {
                 let mut mp = std::collections::HashMap::new();
-                $( mp.insert(stringify!($func2), &$name::$func2 as &'static Item); )*
+                $( mp.insert(stringify!($func2), &$name::$func2 as &'static Item<$name>); )*
                 mp
             }
 
-            fn fmap(f: &&Item ) -> String {
-                let v0 = Mate::methods();
+            fn fmap<$name>(f: &&Item<$name> ) -> String where $name: 'static {
+                let v0 = Mate::methods::<$name>();
                 let mut v = Vec::new();
                 v0.into_iter().for_each(|func| {
-                    v.push( *func as *const Item );
+                    v.push( *func as *const Item<$name> );
                 });
                 println!("vec of pointer: {:?}", v);
                 let vlen = v.len();
                 let mut i = 0;
                 for item in v.into_iter() {
-                    let prt: *const  dyn Fn(&dyn Spider, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &**f;
-                    let iprt: *const Item = item;
+                    let prt: *const  dyn Fn(&$name, &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> = &**f;
+                    let iprt: *const Item<$name> = item;
                     println!("prt: {:?}, iprt: {:?}", prt, iprt);
                     if iprt == prt {
                         break;
@@ -111,12 +128,12 @@ macro_rules! spd {
                 }
             }
 
-            fn get_parser(ind: &str) -> Option<&'static dyn Fn(&dyn Spider, &Response) -> Sitem<ParseResult>> 
+            fn get_parser<$name>(ind: &str) -> Option<&'static dyn Fn(&$name, &Response) -> Sitem<ParseResult>> 
             {
                 let v0 = Mate::methods();
                 let mut v = Vec::new();
                 v0.into_iter().for_each(|func| {
-                    v.push( *func as &'static Item );
+                    v.push( *func as &'static Item<$name> );
                 });
                 let names = &Mate::meta().1;
                 let mut i = 0;
@@ -132,110 +149,93 @@ macro_rules! spd {
                 }else {
                     None
                 }
-
             }
         }
-
-        pub trait Spide {
-            $(
-                fn $func2(x: &dyn Spider, $($arg2_name: $arg2_type)*) -> $res2 where Self: Sized;
-            )*
-        }
-
-        impl Spide for $name {
-
-            $(
-                fn $func2(x: &dyn Spider, $($arg2_name: $arg2_type)*) -> $res2 $bk2
-            )*
-        }
-
     };
 }
 
+spd!{
+    pub struct S {
+        a: i32,
+    }
 
-/*
- *spd!{
- *    pub struct S {
- *        parser: Parser,
- *    }
- *
- *    impl S {
- *        pub fn entry_profile(&self,) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("profile");
- *            Ok( "profile")
- *        }
- *
- *        pub fn entry_task(&self,) -> Result<Vec<Task>, Box<dyn std::error::Error + Send + Sync>> {
- *            Ok(vec![])
- *        }
- *        
- *        pub fn m1(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("m1 called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *
- *        pub fn m2(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("m1 called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *
- *        pub fn m3(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("m1 called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *
- *        pub fn parse(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("parse called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *        pub fn parse_index(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("parse called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *
- *        pub fn parse_content(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
- *            println!("parse called");
- *            Ok( ParseResult{
- *                entities: None,
- *                profile: None,
- *                task: None,
- *                req: None,
- *                yield_err: None,
- *            } )
- *        }
- *    }
- *}
- */
+    impl S {
+        pub fn entry_profile1(&self,) -> Result<&'static str, Box<dyn std::error::Error + Send + Sync>> {
+            println!("profile");
+            Ok( "profile")
+        }
+
+        pub fn entry_task1(&self,) -> Result<Vec<Task>, Box<dyn std::error::Error + Send + Sync>> {
+            Ok(vec![])
+        }
+        
+        pub fn m1(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("m1 called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn m2(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("m1 called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn m3(&self, response: &Response) -> Result< ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("m1 called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn parse1(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("parse called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn parse_index(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("parse called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+
+        pub fn parse_content(&self, response: &Response) -> Result<ParseResult, Box<dyn std::error::Error + Send + Sync>> {
+            println!("parse called");
+            Ok( ParseResult{
+                entities: None,
+                profile: None,
+                task: None,
+                req: None,
+                yield_err: None,
+            } )
+        }
+    }
+}
 
 
 /*
@@ -270,12 +270,14 @@ macro_rules! spd {
  *            method: "GET".to_string(),
  *            cookie: HashMap::new(),
  *            created: 64,
- *            fparser: Parser{ data:  &Spider::parse  },
+ *            parser: "parse".to_owned(),
  *            targs: None,
  *            msg: None,
  *
  *            pargs: None,
  *        };
+ *        let s = S{};
+ *        
  *        let r1 = (ob.parser.data)(&ob, &res).unwrap();
  *        let r3 = (ob1.parser.data)(&ob1, &res).unwrap();
  *        println!("r3:{:?}", r3.entities);

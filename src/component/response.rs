@@ -5,7 +5,7 @@ extern crate hyper_tls;
 
 use crate::component::{Profile, PArgs, ParseError, Request, ResError, Task, TArgs};
 use crate::macros::MiddleWare;
-use crate::macros::{Spider, MSpider};
+use crate::macros::{Spider, MSpider, Mate};
 use log::{debug, error, info, trace, warn};
 //use crate::request::Request;
 use std::collections::HashMap;
@@ -37,9 +37,9 @@ unsafe impl Send for ParseResult{}
 
 ///the trait that parse the response
 pub trait Parse {
-    fn parse<T>(body: Response, app: &dyn Spider, mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError> where T: MSpider+?Sized;
+    fn parse<T, U>(body: Response, app: &'static U , mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError> where T: MSpider, U: Spider;
 
-    fn parse_all<T>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &dyn Spider, mware: &dyn MiddleWare) where T:MSpider+?Sized;
+    fn parse_all<T, U>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static U, mware: &dyn MiddleWare) where T:MSpider, U:Spider;
 }
 
 pub struct Response  {
@@ -190,7 +190,7 @@ impl Response {
 
 
 impl Parse for Response {
-    fn parse<T>(mut res: Response, app: &dyn Spider, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> where T: MSpider+?Sized {
+    fn parse<T, U>(mut res: Response, app: &'static U, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> where T: MSpider, U: Spider {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
@@ -206,7 +206,7 @@ impl Parse for Response {
             };
             //let content = res.content.to_owned().unwrap();
             let ind = &res.parser;
-            let parser = T::get_parser(ind).unwrap();
+            let parser = Mate::get_parser(ind).unwrap();
             let data = (parser)(app, &res);
             match data {
                 Ok(v) => {
@@ -244,7 +244,7 @@ impl Parse for Response {
         }
     }
 
-    fn parse_all<T>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &dyn Spider, mware: &dyn MiddleWare) where T: MSpider+?Sized {
+    fn parse_all<T, U>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static U, mware: &dyn MiddleWare) where T: MSpider, U:Spider{
         let mut v = Vec::new();
         let len = vres.lock().unwrap().len();
         vec![0; len.min(round) ].iter().for_each(|_|{
@@ -252,7 +252,7 @@ impl Parse for Response {
             v.push(t);
         });
         v.into_iter().for_each(| res |{
-            match Response::parse::<T>(res, app, mware) {
+            match Response::parse::<T, U>(res, app, mware) {
 
                Ok(d) => {
                    if let Some(da) = d.profile {

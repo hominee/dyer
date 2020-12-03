@@ -24,10 +24,15 @@ use std::sync::{
 };
 use tokio::task;
 
-pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'static dyn MiddleWare, 
-    pline: &'static dyn Pipeline
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>  
+pub async fn run<'a, T: Spider, U: MSpider>( 
+    app: &'static T , 
+    mware: &'a dyn MiddleWare, 
+    pline: &'a dyn Pipeline
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>>  
 {
+    mware.hand_item(&mut vec![]);
+    app.entry_profile().unwrap();
+    Spider::entry_profile(app).unwrap();
     //init log4rs "Hello  rust"
     log4rs::init_file("log4rs.yaml", Default::default()).unwrap();
 
@@ -136,8 +141,8 @@ pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'stat
     } else {
         //skip the history and start new fields
         //to staart with, some Profile required
-        let uri = <T as Spider>::entry_profile(app).unwrap();
-        //app.entry_profile().unwrap();
+        //let uri = <T as Spider>::entry_profile(app).unwrap();
+        let uri = app.entry_profile().unwrap();
         let uas = base_ua.clone();
         Profile::exec_all(&client, base_profile.clone(), uri, 7, uas).await;
         panic!("{:?}", base_profile);
@@ -145,7 +150,8 @@ pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'stat
 
 
         let cfut_res = base_res.clone();
-        let tasks = <T as Spider>::entry_task(app).unwrap();
+        //let tasks = <T as Spider>::entry_task(app).unwrap();
+        let tasks = app.entry_task().unwrap();
         base_tasks.lock().unwrap().extend(tasks);
     }
 
@@ -181,7 +187,7 @@ pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'stat
                 join_all(v).await;
 
                 // dispath them
-                Response::parse_all::<U>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999, app, mware);
+                Response::parse_all::<U, T>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), 99999999, app, mware);
 
                 //store them
                 Request::stored(cbase_reqs_tmp);
@@ -242,7 +248,8 @@ pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'stat
                     let fclient = client.clone();
                     let tbase_profile = base_profile.clone();
                     let uas = base_ua.clone();
-                    let uri = <T as Spider>::entry_profile(app).unwrap();
+                    //let uri = <T as Spider>::entry_profile(app).unwrap();
+                    let uri = app.entry_profile().unwrap();
                     let johp = task::spawn(async move {
                         Profile::exec_all(&fclient, tbase_profile, uri, 7, uas).await;
                     });
@@ -251,7 +258,7 @@ pub async fn run<T: Spider, U: MSpider>( app: &'static dyn Spider, mware: &'stat
 
                 // parse response
                 //extract the parseResult
-                Response::parse_all::<U>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res, app, mware);
+                Response::parse_all::<U, T>(cbase_res.clone(), cbase_reqs.clone(), cbase_tasks.clone(), cbase_profile.clone(), cbase_result.clone(), cbase_yield_err.clone(), round_res, app, mware);
 
                 //pipeline put out yield_parse_err and Entity
                 if cbase_yield_err.lock().unwrap().len() > round_yield_err {
