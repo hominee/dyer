@@ -1,6 +1,4 @@
 extern crate config;
-extern crate hyper;
-extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
@@ -10,12 +8,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind};
 
-use crate::component::{Request, ResError, UserAgent};
+use crate::component::{Request, Client, ResError, UserAgent};
 use futures::future::join_all;
-use hyper::Client as hClient;
-use hyper::{client::HttpConnector, Body as hBody, Request as hRequest};
-use hyper_timeout::TimeoutConnector;
-use hyper_tls::HttpsConnector;
+use hyper::{ Body as hBody, Request as hRequest};
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -57,8 +52,8 @@ pub enum ProfileType {
 impl Profile {
     pub async fn exec(
         req: hRequest<hBody>,
-        client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
     ) -> Result<Profile, ResError> {
+        let client = &Client::new(7, 23,7)[0];
         let mut p = Profile::default();
         let mut hd = p.headers.unwrap();
         let ua = req.headers().get("User-Agent").unwrap().clone().to_str().unwrap().to_string();
@@ -97,7 +92,6 @@ impl Profile {
     }
 
     pub async fn exec_all(
-        client: &hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>,
         profiles: Arc<Mutex<Vec<Profile>>>,
         uri: &str,
         num: usize,
@@ -116,7 +110,7 @@ impl Profile {
             hd.insert("User-Agent".to_string(), ua);
             req.headers = Some(hd);
             if let Some(t) = req.init() {
-                vreq.push(Profile::exec(t, client));
+                vreq.push(Profile::exec(t));
             }
         });
         // poll all request concurrently
@@ -137,7 +131,7 @@ impl Profile {
 }
 
 impl Profile {
-    pub fn stored(profiles: Arc<Mutex<Vec<Profile>>>) {
+    pub fn stored(profiles: &Arc<Mutex<Vec<Profile>>>) {
         let mut setting = Config::default();
         setting.merge(config::File::with_name("setting")).unwrap();
         let path = setting.get_str("path_profile").unwrap() + "/profile.txt";
@@ -199,19 +193,19 @@ impl Default for Profile {
             .as_secs();
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
-            "Accept".to_owned(),
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_owned(),
+            "Accept".to_string(),
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_string(),
         );
-        headers.insert("Accept-Encoding".to_owned(), "gzip, deflate, br".to_owned());
-        headers.insert("Accept-Language".to_owned(), "en-US,en;q=0.5".to_owned());
-        headers.insert("Cache-Control".to_owned(), "no-cache".to_owned());
-        headers.insert("Connection".to_owned(), "keep-alive".to_owned());
-        headers.insert("Pragma".to_owned(), "no-cache".to_owned());
-        headers.insert("Upgrade-Insecure-Requests".to_owned(), "1".to_owned());
+        headers.insert("Accept-Encoding".to_string(), "gzip, deflate, br".to_string());
+        headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
+        headers.insert("Cache-Control".to_string(), "no-cache".to_string());
+        headers.insert("Connection".to_string(), "keep-alive".to_string());
+        headers.insert("Pragma".to_string(), "no-cache".to_string());
+        headers.insert("Upgrade-Insecure-Requests".to_string(), "1".to_string());
         headers.insert(
-            "User-Agent".to_owned(),
+            "User-Agent".to_string(),
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0"
-                .to_owned(),
+                .to_string(),
         );
         Profile {
             headers: Some(headers),

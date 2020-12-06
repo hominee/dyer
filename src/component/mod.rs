@@ -3,15 +3,13 @@ mod request;
 mod response;
 mod task;
 mod useragent;
-//mod parser;
 mod client;
 
 pub use profile::{ PArgs, Profile };
 pub use request::{ Request};
-pub use response::{Response, ParseResult, Parse,  Entity};
+pub use response::{Response, ParseResult };
 pub use task::{Task, TArgs};
 pub use useragent::UserAgent;
-//pub use parser::Parser;
 pub use client::Client;
 
 use std::error::Error;

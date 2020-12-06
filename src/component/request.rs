@@ -1,18 +1,16 @@
-//extern crate brotli2;
 extern crate bytes;
-//extern crate flate2;
 extern crate config;
 extern crate hyper;
 extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
-use crate::component::{TArgs, Profile, PArgs, Task};
+use crate::component::{TArgs, Profile, PArgs, Task,};
 use config::Config;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
 use serde::{Deserialize, Serialize};
-use std::clone::Clone;
+use crate::engine::App;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
@@ -43,17 +41,17 @@ impl Request {
     /// based on the length of both profiles and tasks 
     /// to restrict the gen size of request
     /// the num should be provided
-    pub fn gen(profiles: Arc<Mutex< Vec<Profile> >>, tasks: Arc<Mutex< Vec<Task> >>, req: Arc<Mutex< Vec<Request> >>, now: u64, round: usize) {
+    pub fn gen<T>(apk: &mut App<T>, now: u64, round: usize) {
         //split them into two parts
         let mut ind = Vec::new();
         let mut ndy = Vec::new();
         let mut j = 0;
 
-        let len_p = profiles.lock().unwrap().len();
-        let len_t = tasks.lock().unwrap().len();
+        let len_p = apk.profile.lock().unwrap().len();
+        let len_t = apk.task.lock().unwrap().len();
         let len = len_t.min( len_p );
         for i in 0..round.min(len) {
-            let p = &profiles.lock().unwrap()[i];
+            let p = &apk.profile.lock().unwrap()[i];
             if p.able <= now {
                 ind.push(i-j);
                 j += 1;
@@ -62,13 +60,13 @@ impl Request {
 
         ind.into_iter().for_each(|index|{
             let mut req = Request::default();
-            let p = profiles.lock().unwrap().remove(index);
-            let task = tasks.lock().unwrap().pop().unwrap();
+            let p = apk.profile.lock().unwrap().remove(index);
+            let task = apk.task.lock().unwrap().pop().unwrap();
             req.from_task(task);
             req.from_profile(p);
             ndy.push(req);
         });
-        req.lock().unwrap().extend(ndy);
+        apk.req.lock().unwrap().extend(ndy);
     }
 }
 
@@ -159,7 +157,7 @@ impl Default for Request {
 }
 
 impl Request {
-    pub fn stored(reqs: Arc<Mutex<Vec<Request>>>) {
+    pub fn stored(reqs: &Arc<Mutex<Vec<Request>>>) {
         let mut setting = Config::default();
         setting.merge(config::File::with_name("setting")).unwrap();
         let path = setting.get_str("path_request").unwrap() + "/request.txt";

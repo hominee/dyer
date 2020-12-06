@@ -3,44 +3,28 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::component::{Profile, PArgs, ParseError, Request, ResError, Task, TArgs};
+use crate::component::{Profile, PArgs, ParseError, Request, Task, TArgs};
 use crate::macros::MiddleWare;
-use crate::macros::{Spider, MSpider, Mate};
+use crate::macros::{Spider, };
 use log::{debug, error, info, trace, warn};
-//use crate::request::Request;
 use std::collections::HashMap;
-//use std::time::{SystemTime, UNIX_EPOCH};
-use bytes::buf::ext::BufExt;
-use std::io::{BufReader, Read};
+use crate::engine::App;
 
-use futures::future::join_all;
-use crate::component::Client;
-use hyper::{Body as hBody, Request as hRequest};
-use std::sync::{Arc, Mutex};
-use tokio::task;
-use futures::executor::block_on;
-use serde::{Serialize, Deserialize};
+/*
+ *all item prototypes intented to collected
+ *#[derive(Debug, Serialize, Deserialize)]
+ *pub enum Entity {}
+ */
 
-///all item prototypes intented to collected
-#[derive(Debug, Serialize, Deserialize)]
-pub enum Entity {}
-
-pub struct ParseResult {
+pub struct ParseResult<T> {
     pub req: Option<Request>,
     pub task: Option<Vec<Task>>,
     pub profile: Option<Profile>,
-    pub entities: Option<Vec<Entity>>,
+    pub entities: Option<Vec<T>>,
     pub yield_err: Option<String>,
 }
-unsafe impl Sync for ParseResult {}
-unsafe impl Send for ParseResult{}
-
-///the trait that parse the response
-pub trait Parse {
-    fn parse<T, U>(body: Response, app: &'static U , mware: &dyn MiddleWare ) -> Result<ParseResult, ParseError> where T: MSpider, U: Spider;
-
-    fn parse_all<T, U>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize, app: &'static U, mware: &dyn MiddleWare) where T:MSpider, U:Spider;
-}
+unsafe impl<T> Sync for ParseResult<T> {}
+unsafe impl<T> Send for ParseResult<T> {}
 
 pub struct Response  {
     pub headers: HashMap<String, String>,
@@ -62,135 +46,7 @@ unsafe impl Sync for Response {}
 unsafe impl Send for Response{}
 
 impl Response {
-    ///this function require a `hyper::Request` and `hyper::Client` to return the Response
-
-    pub async fn exec(
-        req: hRequest<hBody>,
-    ) -> Result<(Option<String>, HashMap<String, String>, usize), ResError> {
-        let client = &Client::new()[0];
-        let response = client.request(req).await.unwrap();
-        let (header, bd) = response.into_parts();
-        let bod = hyper::body::aggregate(bd).await;
-        match bod {
-            Ok(body) => {
-                let mut reader = BufReader::new(body.reader());
-                let status = header.status.as_u16() as usize;
-                let mut headers: HashMap<String, String> = HashMap::new();
-                header.headers.into_iter().for_each(|(key, value)| {
-                    headers.insert(
-                        key.unwrap().to_string(),
-                        value.to_str().unwrap().to_string(),
-                    );
-                });
-
-                // Response Content
-                let mut data = String::new();
-                reader.read_to_string(&mut data).unwrap();
-
-                Ok((Some(data), headers, status))
-            }
-            Err(e) => Err(ResError {
-                desc: e.into_cause().unwrap().source().unwrap().to_string(),
-            }),
-        }
-    }
-
-    pub async fn exec_one(
-        req: Request,
-    ) -> Result<Response, ResError> {
-        let mut r = Response::default(Some(&req));
-        let req = req.init().unwrap();
-        let response = Response::exec(req).await;
-
-        match response {
-            Ok(data) => {
-                r.headers.extend(data.1);
-                r.content = data.0;
-                r.status = data.2;
-            }
-            Err(e) => {
-                r.msg = Some(e.desc);
-            }
-        }
-        Ok(r)
-    }
-
-    // FIXME it's not necessary to return Result, Vec<> will be fine.
-    pub async fn exec_all(
-        reqs: Vec<Request>,
-        result: Arc<Mutex<Vec<Response>>>,
-    ) {
-        let mut v = Vec::new();
-        let mut rs = Vec::new();
-        reqs.into_iter().for_each(|req| {
-            rs.push(Response::default(Some(&req)));
-            if let Some(r) = req.init() {
-                v.push(r);
-            }
-        });
-
-        let mut futs = Vec::new();
-        v.into_iter().for_each(|req| {
-            let fut = Response::exec(req);
-            futs.push(fut);
-        });
-        let mut res = join_all(futs).await;
-        for _ in 0..rs.len() {
-            let mut r = rs.pop().unwrap();
-            let d = res.pop().unwrap();
-            match d {
-                Ok(da) => {
-                    r.content = da.0;
-                    r.headers = da.1;
-                    r.status = da.2;
-                }
-                Err(e) => {
-                    r.msg = Some(e.desc);
-                }
-            }
-        }
-        result.lock().unwrap().extend(rs);
-    }
-
-    ///join spawned tokio-task
-    pub fn join(
-        res: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>,
-        pfile: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>
-    ) {
-        let mut ind_r: Vec<usize> = Vec::new();
-        let mut handle_r = Vec::new();
-        let mut j = 0;
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u64;
-        res.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
-            if now - r.0 >= 30 {
-                ind_r.push(ind-j);
-                j += 1;
-            }
-        });
-        ind_r.into_iter().for_each(|ind|{
-            let (_, handle) = res.lock().unwrap().remove(ind);
-            handle_r.push(handle)
-        });
-
-        let mut ind_p: Vec<usize> = Vec::new();
-        let mut j = 0;
-        pfile.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
-            if now - r.0 >= 30 {
-                ind_p.push(ind-j);
-                j += 1;
-            }
-        });
-        ind_p.into_iter().for_each(|ind|{
-            let (_, handle) = pfile.lock().unwrap().remove(ind);
-            handle_r.push(handle)
-        });
-        block_on( join_all(handle_r) );
-    }
-}
-
-
-impl Parse for Response {
-    fn parse<T, U>(mut res: Response, app: &'static U, mware: &dyn MiddleWare) -> Result<ParseResult, ParseError> where T: MSpider, U: Spider {
+    pub fn parse<T> (mut res: Response, app: &'static dyn Spider<T>, mware: &dyn MiddleWare<T>) -> Result<ParseResult<T>, ParseError>  {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
@@ -206,8 +62,8 @@ impl Parse for Response {
             };
             //let content = res.content.to_owned().unwrap();
             let ind = &res.parser;
-            let parser = Mate::get_parser(ind).unwrap();
-            let data = (parser)(app, &res);
+            let parser = app.get_parser(ind).unwrap();
+            let data = (parser)(&res);
             match data {
                 Ok(v) => {
                     match v.entities {
@@ -244,32 +100,32 @@ impl Parse for Response {
         }
     }
 
-    fn parse_all<T, U>(vres: Arc<Mutex< Vec<Response> >>, vreq: Arc<Mutex<  Vec<Request> >>, vtask: Arc<Mutex< Vec<Task> >>, vpfile: Arc<Mutex< Vec<Profile> >>, entities: Arc<Mutex< Vec<Entity> >>, yield_err: Arc<Mutex< Vec<String> >>, round: usize , app: &'static U, mware: &dyn MiddleWare) where T: MSpider, U:Spider{
+    pub fn parse_all<T>( apk: &mut App<T>,  round: usize , app: &'static dyn Spider<T>, mware: &dyn MiddleWare<T>) {
         let mut v = Vec::new();
-        let len = vres.lock().unwrap().len();
+        let len = apk.res.lock().unwrap().len();
         vec![0; len.min(round) ].iter().for_each(|_|{
-            let t = vres.lock().unwrap().pop().unwrap();
+            let t = apk.res.lock().unwrap().pop().unwrap();
             v.push(t);
         });
         v.into_iter().for_each(| res |{
-            match Response::parse::<T, U>(res, app, mware) {
+            match Response::parse(res, app, mware) {
 
                Ok(d) => {
                    if let Some(da) = d.profile {
-                       vpfile.lock().unwrap().push(da);
+                       apk.profile.lock().unwrap().push(da);
                    }
                    if let Some(ta) = d.task {
-                       vtask.lock().unwrap().extend(ta);
+                       apk.task.lock().unwrap().extend(ta);
                    }
                    if let Some(re) = d.req {
-                       vreq.lock().unwrap().push(re);
+                       apk.req.lock().unwrap().push(re);
                    }
                    if let Some(err) = d.yield_err {
-                       yield_err.lock().unwrap().push(err);
+                       apk.yield_err.lock().unwrap().push(err);
                    }
                    if let Some(en) = d.entities {
                        // pipeline out put the entities
-                       entities.lock().unwrap().extend(en.into_iter());
+                       apk.result.lock().unwrap().extend(en.into_iter());
                    }
                }
                Err(_e) => {
@@ -323,7 +179,7 @@ impl Drop for Response {
 }
 
 impl Response {
-    fn default(req: Option<&Request>) -> Self {
+    pub fn default(req: Option<&Request>) -> Self {
         match req {
             Some(r) => Response {
                 uri: r.uri.clone(),
@@ -334,13 +190,11 @@ impl Response {
                 targs: r.targs.clone(),
                 msg: None,
                 body: r.body.clone().unwrap(),
-
                 content: None,
                 headers: r.headers.clone().unwrap(),
                 pheaders: r.pheaders.clone(),
                 theaders: r.theaders.clone(),
                 status: 0,
-
                 pargs: r.pargs.clone(),
             },
             None => Response {
@@ -349,7 +203,6 @@ impl Response {
                 theaders: HashMap::new(),
                 status: 0,
                 content: None,
-
                 body: HashMap::new(),
                 uri: "".to_owned(),
                 method: "".to_owned(),

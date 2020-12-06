@@ -26,7 +26,7 @@ pub struct Task {
 pub struct TArgs {}
 
 impl Task {
-    pub fn stored(task: Arc<Mutex<Vec<Task>>>) {
+    pub fn stored(task: &Arc<Mutex<Vec<Task>>>) {
         let mut setting = Config::default();
         setting.merge(config::File::with_name("setting")).unwrap();
         let path = setting.get_str("path_task").unwrap() + "/task.txt";
