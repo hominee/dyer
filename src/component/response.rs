@@ -3,18 +3,12 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::component::{Profile, PArgs, ParseError, Request, Task, TArgs};
+use crate::component::{PArgs, ParseError, Profile, Request, TArgs, Task};
+use crate::engine::App;
 use crate::macros::MiddleWare;
-use crate::macros::{Spider, };
+use crate::macros::Spider;
 use log::{debug, error, info, trace, warn};
 use std::collections::HashMap;
-use crate::engine::App;
-
-/*
- *all item prototypes intented to collected
- *#[derive(Debug, Serialize, Deserialize)]
- *pub enum Entity {}
- */
 
 pub struct ParseResult<T> {
     pub req: Option<Request>,
@@ -26,7 +20,7 @@ pub struct ParseResult<T> {
 unsafe impl<T> Sync for ParseResult<T> {}
 unsafe impl<T> Send for ParseResult<T> {}
 
-pub struct Response  {
+pub struct Response {
     pub headers: HashMap<String, String>,
     pub pheaders: HashMap<String, String>,
     pub theaders: HashMap<String, String>,
@@ -43,16 +37,20 @@ pub struct Response  {
     pub pargs: Option<PArgs>,
 }
 unsafe impl Sync for Response {}
-unsafe impl Send for Response{}
+unsafe impl Send for Response {}
 
 impl Response {
-    pub fn parse<T> (mut res: Response, app: &'static dyn Spider<T>, mware: &dyn MiddleWare<T>) -> Result<ParseResult<T>, ParseError>  {
+    pub fn parse<T>(
+        mut res: Response,
+        spd: &'static dyn Spider<T>,
+        mware: &dyn MiddleWare<T>,
+    ) -> Result<ParseResult<T>, ParseError> {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
             // status code between 200 - 299
             mware.hand_res(&mut res);
-            let (_, p) : (Task, Profile)= res.into1().unwrap();
+            let (_, p): (Task, Profile) = res.into1().unwrap();
             let mut r = ParseResult {
                 req: None,
                 task: None,
@@ -60,34 +58,31 @@ impl Response {
                 entities: None,
                 yield_err: None,
             };
-            //let content = res.content.to_owned().unwrap();
             let ind = &res.parser;
-            let parser = app.get_parser(ind).unwrap();
+            let parser = spd.get_parser(ind).unwrap();
             let data = (parser)(&res);
             match data {
-                Ok(v) => {
-                    match v.entities {
-                        Some(mut en) => {
-                            mware.hand_item(&mut en);
-                            r.entities = Some(en);
-                        }
-                        None => {}
+                Ok(v) => match v.entities {
+                    Some(mut en) => {
+                        mware.hand_item(&mut en);
+                        r.entities = Some(en);
                     }
-                }
+                    None => {}
+                },
                 Err(_) => {
                     // no entities comes in.
                     // leave None as default.
                     let content = res.content.clone().unwrap();
-                    let s = format!("{}\n{}", &res.uri,content);
+                    let s = format!("{}\n{}", &res.uri, content);
                     r.yield_err = Some(s);
                 }
             }
             return Ok(r);
         } else {
-            let r = mware.hand_err( res );
+            let r = mware.hand_err(res);
             match r {
                 Some(r) => Ok(ParseResult {
-                    task:  r.0,
+                    task: r.0,
                     profile: r.1,
                     req: r.2,
                     entities: None,
@@ -100,38 +95,42 @@ impl Response {
         }
     }
 
-    pub fn parse_all<T>( apk: &mut App<T>,  round: usize , app: &'static dyn Spider<T>, mware: &dyn MiddleWare<T>) {
+    pub fn parse_all<T>(
+        apk: &mut App<T>,
+        round: usize,
+        spd: &'static dyn Spider<T>,
+        mware: &dyn MiddleWare<T>,
+    ) {
         let mut v = Vec::new();
         let len = apk.res.lock().unwrap().len();
-        vec![0; len.min(round) ].iter().for_each(|_|{
+        vec![0; len.min(round)].iter().for_each(|_| {
             let t = apk.res.lock().unwrap().pop().unwrap();
             v.push(t);
         });
-        v.into_iter().for_each(| res |{
-            match Response::parse(res, app, mware) {
-
-               Ok(d) => {
-                   if let Some(da) = d.profile {
-                       apk.profile.lock().unwrap().push(da);
-                   }
-                   if let Some(ta) = d.task {
-                       apk.task.lock().unwrap().extend(ta);
-                   }
-                   if let Some(re) = d.req {
-                       apk.req.lock().unwrap().push(re);
-                   }
-                   if let Some(err) = d.yield_err {
-                       apk.yield_err.lock().unwrap().push(err);
-                   }
-                   if let Some(en) = d.entities {
-                       // pipeline out put the entities
-                       apk.result.lock().unwrap().extend(en.into_iter());
-                   }
-               }
-               Err(_e) => {
-                           // res has err code (non-200) and cannot handled by error handle
-                           // discard the response that without task or profile.
-               }
+        v.into_iter().for_each(|res| {
+            match Response::parse(res, spd, mware) {
+                Ok(d) => {
+                    if let Some(da) = d.profile {
+                        apk.profile.lock().unwrap().push(da);
+                    }
+                    if let Some(ta) = d.task {
+                        apk.task.lock().unwrap().extend(ta);
+                    }
+                    if let Some(re) = d.req {
+                        apk.req.lock().unwrap().push(re);
+                    }
+                    if let Some(err) = d.yield_err {
+                        apk.yield_err.lock().unwrap().push(err);
+                    }
+                    if let Some(en) = d.entities {
+                        // pipeline out put the entities
+                        apk.result.lock().unwrap().extend(en.into_iter());
+                    }
+                }
+                Err(_e) => {
+                    // res has err code (non-200) and cannot handled by error handle
+                    // discard the response that without task or profile.
+                }
             }
         });
     }
@@ -212,7 +211,6 @@ impl Response {
                 targs: None,
                 msg: None,
                 pargs: None,
-
             },
         }
     }

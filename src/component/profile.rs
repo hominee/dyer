@@ -1,23 +1,20 @@
-extern crate config;
 extern crate serde;
 extern crate serde_json;
-
-use config::Config;
 
 use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind};
 
-use crate::component::{Request, Client, ResError, UserAgent};
+use crate::component::{Client, Request, ResError, UserAgent};
+use futures::executor::block_on;
 use futures::future::join_all;
-use hyper::{ Body as hBody, Request as hRequest};
+use hyper::{Body as hBody, Request as hRequest};
 use log::{error, info};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::io::LineWriter;
 use std::sync::{Arc, Mutex};
-use futures::executor::block_on;
-use rand::Rng;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Profile {
@@ -50,37 +47,45 @@ pub enum ProfileType {
 }
 
 impl Profile {
-    pub async fn exec(
-        req: hRequest<hBody>,
-    ) -> Result<Profile, ResError> {
-        let client = &Client::new(7, 23,7)[0];
+    pub async fn exec(req: hRequest<hBody>) -> Result<Profile, ResError> {
+        let client = &Client::new(7, 23, 7)[0];
         let mut p = Profile::default();
         let mut hd = p.headers.unwrap();
-        let ua = req.headers().get("User-Agent").unwrap().clone().to_str().unwrap().to_string();
-        hd.insert("User-Agent".to_string(), ua );
+        let ua = req
+            .headers()
+            .get("User-Agent")
+            .unwrap()
+            .clone()
+            .to_str()
+            .unwrap()
+            .to_string();
+        hd.insert("User-Agent".to_string(), ua);
         let r = client.request(req).await;
         match r {
             Ok(res) => {
                 let (bd, _) = res.into_parts();
                 let raw_headers = bd.headers;
 
-                let stop_word = ["path",  "expires", "domain", "httpOnly"];
+                let stop_word = ["path", "expires", "domain", "httpOnly"];
                 let mut cookie = HashMap::new();
                 raw_headers.into_iter().for_each(|(k, v)| {
                     let key = k.unwrap().to_string().trim().to_lowercase();
                     if key == "set-cookie".to_string() {
                         let val = v.to_str().unwrap();
-                        let v_str: Vec<&str> = val.split(";").filter(|c| !stop_word.contains( &c.trim() )).collect();
-                        v_str.into_iter().for_each(|pair|{
+                        let v_str: Vec<&str> = val
+                            .split(";")
+                            .filter(|c| !stop_word.contains(&c.trim()))
+                            .collect();
+                        v_str.into_iter().for_each(|pair| {
                             let tmp: Vec<&str> = pair.split("=").collect();
                             if tmp.len() == 2 {
-                                cookie.insert(tmp[0].to_string(), tmp[1].to_string() );
+                                cookie.insert(tmp[0].to_string(), tmp[1].to_string());
                             }
                         });
                     }
                 });
                 p.cookie = Some(cookie);
-                p.headers = Some( hd );
+                p.headers = Some(hd);
                 Ok(p)
             }
             Err(e) => {
@@ -95,13 +100,13 @@ impl Profile {
         profiles: Arc<Mutex<Vec<Profile>>>,
         uri: &str,
         num: usize,
-        uas: Arc< Vec<UserAgent> >,
+        uas: Arc<Vec<UserAgent>>,
     ) {
         let mut vreq = Vec::new();
         vec![0; num].iter().for_each(|_| {
             // select a ua
             let len = uas.len();
-            let ind = rand::thread_rng().gen_range(0, len-1);
+            let ind = rand::thread_rng().gen_range(0, len - 1);
             let ua = uas[ind].clone().user_agent;
             // construct a new reqeust
             let mut req = Request::default();
@@ -114,7 +119,7 @@ impl Profile {
             }
         });
         // poll all request concurrently
-        let vres = block_on(  join_all(vreq) );
+        let vres = block_on(join_all(vreq));
         let mut i = 0usize;
         vres.into_iter().for_each(|res| {
             if let Ok(p) = res {
@@ -131,10 +136,7 @@ impl Profile {
 }
 
 impl Profile {
-    pub fn stored(profiles: &Arc<Mutex<Vec<Profile>>>) {
-        let mut setting = Config::default();
-        setting.merge(config::File::with_name("setting")).unwrap();
-        let path = setting.get_str("path_profile").unwrap() + "/profile.txt";
+    pub fn stored(path: &str, profiles: &Arc<Mutex<Vec<Profile>>>) {
         let file = fs::File::open(path).unwrap();
         let mut writer = LineWriter::new(file);
         profiles.lock().unwrap().iter().for_each(|r| {
@@ -142,44 +144,27 @@ impl Profile {
         });
     }
 
-    pub fn load() -> Option<Vec<Profile>> {
-        let mut setting = Config::default();
-        setting
-            // load from file
-            .merge(config::File::with_name("setting"))
-            .unwrap();
-        // load from PATH
-        //.merge(config::Environment::with_prefix("APP")).unwrap();
-        match setting.get_str("path_profile") {
-            Ok(path) => {
-                // load Profile here
-                let file = fs::File::open(path.clone() + "profile.txt");
-                match file {
-                    Err(e) => match e.kind() {
-                        ErrorKind::NotFound => {
-                            fs::File::create(path.clone() + "/profile.txt").unwrap();
-                            fs::File::create(path + "/profile_old.txt").unwrap();
-                            return None;
-                        }
-                        _ => unreachable!(),
-                    },
-                    Ok(content) => {
-                        let buf = BufReader::new(content).lines();
-                        let mut data: Vec<Profile> = Vec::new();
-                        buf.into_iter().for_each(|line| {
-                            let profile: Profile = serde_json::from_str(&line.unwrap()).unwrap();
-                            data.push(profile);
-                        });
-                        fs::remove_file(path.clone() + "/profile.txt").unwrap();
-                        fs::rename(path.clone() + "/profile.txt", path + "/profile_old.txt")
-                            .unwrap();
-                        return Some(data);
-                    }
+    pub fn load(path: &str) -> Option<Vec<Profile>> {
+        let file = fs::File::open(path);
+        match file {
+            Err(e) => match e.kind() {
+                ErrorKind::NotFound => {
+                    fs::File::create(path).unwrap();
+                    fs::File::create(path.to_string() + "_old").unwrap();
+                    return None;
                 }
-            }
-            Err(_) => {
-                // file not found
-                panic!("path_profile is not configrated in setting.rs");
+                _ => unreachable!(),
+            },
+            Ok(content) => {
+                let buf = BufReader::new(content).lines();
+                let mut data: Vec<Profile> = Vec::new();
+                buf.into_iter().for_each(|line| {
+                    let profile: Profile = serde_json::from_str(&line.unwrap()).unwrap();
+                    data.push(profile);
+                });
+                fs::remove_file(path.to_string() + "_old").unwrap();
+                fs::rename(path, path.to_string() + "_old").unwrap();
+                return Some(data);
             }
         }
     }
@@ -194,9 +179,13 @@ impl Default for Profile {
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
             "Accept".to_string(),
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_string(),
+            "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+                .to_string(),
         );
-        headers.insert("Accept-Encoding".to_string(), "gzip, deflate, br".to_string());
+        headers.insert(
+            "Accept-Encoding".to_string(),
+            "gzip, deflate, br".to_string(),
+        );
         headers.insert("Accept-Language".to_string(), "en-US,en;q=0.5".to_string());
         headers.insert("Cache-Control".to_string(), "no-cache".to_string());
         headers.insert("Connection".to_string(), "keep-alive".to_string());

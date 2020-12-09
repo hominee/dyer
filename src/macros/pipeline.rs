@@ -3,12 +3,12 @@ use std::sync::{Arc, Mutex};
 /// pipeline out the items
 pub trait Pipeline<T> {
     fn open_pipeline(&self) -> &Vec<std::fs::File>;
-    fn close_pipeline(&mut self) ;
-    fn process_item(&self, item: &mut Arc<Mutex<Vec<T>>> ) ;
-    fn process_yielderr(&self, item: &mut Arc<Mutex<Vec<String>>> ) ;
+    fn close_pipeline(&mut self);
+    fn process_item(&self, item: &mut Arc<Mutex<Vec<T>>>);
+    fn process_yielderr(&self, item: &mut Arc<Mutex<Vec<String>>>);
 }
 
-pub struct MPipeline{
+pub struct MPipeline {
     pub path: String,
 }
 

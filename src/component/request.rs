@@ -1,16 +1,14 @@
 extern crate bytes;
-extern crate config;
 extern crate hyper;
 extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
-use crate::component::{TArgs, Profile, PArgs, Task,};
-use config::Config;
+use crate::component::{PArgs, Profile, TArgs, Task};
+use crate::engine::App;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
 use serde::{Deserialize, Serialize};
-use crate::engine::App;
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
@@ -18,7 +16,6 @@ use std::io::LineWriter;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
-
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Request {
@@ -32,13 +29,12 @@ pub struct Request {
     pub able: u64,
     pub created: u64,
     pub targs: Option<TArgs>,
-    pub pargs: Option<PArgs>
+    pub pargs: Option<PArgs>,
 }
 unsafe impl Send for Request {}
 
 impl Request {
-
-    /// based on the length of both profiles and tasks 
+    /// based on the length of both profiles and tasks
     /// to restrict the gen size of request
     /// the num should be provided
     pub fn gen<T>(apk: &mut App<T>, now: u64, round: usize) {
@@ -49,16 +45,16 @@ impl Request {
 
         let len_p = apk.profile.lock().unwrap().len();
         let len_t = apk.task.lock().unwrap().len();
-        let len = len_t.min( len_p );
+        let len = len_t.min(len_p);
         for i in 0..round.min(len) {
             let p = &apk.profile.lock().unwrap()[i];
             if p.able <= now {
-                ind.push(i-j);
+                ind.push(i - j);
                 j += 1;
             }
         }
 
-        ind.into_iter().for_each(|index|{
+        ind.into_iter().for_each(|index| {
             let mut req = Request::default();
             let p = apk.profile.lock().unwrap().remove(index);
             let task = apk.task.lock().unwrap().pop().unwrap();
@@ -69,7 +65,6 @@ impl Request {
         apk.req.lock().unwrap().extend(ndy);
     }
 }
-
 
 impl Request {
     pub fn init(self) -> Option<hRequest<hBody>> {
@@ -157,10 +152,7 @@ impl Default for Request {
 }
 
 impl Request {
-    pub fn stored(reqs: &Arc<Mutex<Vec<Request>>>) {
-        let mut setting = Config::default();
-        setting.merge(config::File::with_name("setting")).unwrap();
-        let path = setting.get_str("path_request").unwrap() + "/request.txt";
+    pub fn stored(path: &str, reqs: &Arc<Mutex<Vec<Request>>>) {
         let file = fs::File::open(path).unwrap();
         let mut writer = LineWriter::new(file);
         reqs.lock().unwrap().iter().for_each(|req| {
@@ -168,47 +160,30 @@ impl Request {
         });
     }
 
-    
-    pub fn load() -> Option<Vec<Request>> {
-        let mut setting = Config::default();
-        setting
-            // load from file
-            .merge(config::File::with_name("setting"))
-            .unwrap();
-        // load from PATH
-        //.merge(config::Environment::with_prefix("APP")).unwrap();
-        match setting.get_str("path_request") {
-            Ok(path) => {
-                // load Profile here
-                let file = fs::File::open(path.clone() + "/request.txt");
-                match file {
-                    Err(e) => match e.kind() {
-                        ErrorKind::NotFound => {
-                            // create request_old file and  old file
-                            fs::File::create(path.clone() + "/request.txt").unwrap();
-                            fs::File::create(path + "/request_old.txt").unwrap();
-                            return None;
-                        }
-                        _ => unreachable!(),
-                    },
-                    Ok(content) => {
-                        let buf = BufReader::new(content).lines();
-                        let mut data: Vec<Request> = Vec::new();
-                        buf.into_iter().for_each(|line| {
-                            let req: Request = serde_json::from_str(&line.unwrap()).unwrap();
-                            data.push(req);
-                        });
-                        // remove request_old file and rename current file to old file
-                        fs::remove_file(path.clone() + "/request_old.txt").unwrap();
-                        fs::rename(path.clone() + "/request.txt", path + "request_old.txt")
-                            .unwrap();
-                        return Some(data);
-                    }
+    pub fn load(path: &str) -> Option<Vec<Request>> {
+        // load Profile here
+        let file = fs::File::open(path);
+        match file {
+            Err(e) => match e.kind() {
+                ErrorKind::NotFound => {
+                    // create request_old file and  old file
+                    fs::File::create(path).unwrap();
+                    fs::File::create(path.to_string() + "_old").unwrap();
+                    return None;
                 }
-            }
-            Err(_) => {
-                // file not found
-                panic!("path_request is not configrated in setting.rs");
+                _ => unreachable!(),
+            },
+            Ok(content) => {
+                let buf = BufReader::new(content).lines();
+                let mut data: Vec<Request> = Vec::new();
+                buf.into_iter().for_each(|line| {
+                    let req: Request = serde_json::from_str(&line.unwrap()).unwrap();
+                    data.push(req);
+                });
+                // remove request_old file and rename current file to old file
+                fs::remove_file(path.to_string() + "_old").unwrap();
+                fs::rename(path, path.to_string() + "_old").unwrap();
+                return Some(data);
             }
         }
     }
@@ -222,8 +197,10 @@ impl Request {
             self.cookie = profile.cookie;
         }
         if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(profile.headers.clone() .unwrap());
-            if let Some( p ) = profile.headers { self.pheaders = p; }
+            headers.extend(profile.headers.clone().unwrap());
+            if let Some(p) = profile.headers {
+                self.pheaders = p;
+            }
         } else {
             self.headers = profile.headers;
         }
@@ -237,8 +214,10 @@ impl Request {
         self.uri = task.uri;
         self.method = task.method;
         if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(task.headers.clone() .unwrap());
-            if let Some(t) = task.headers { self.theaders = t; } ;
+            headers.extend(task.headers.clone().unwrap());
+            if let Some(t) = task.headers {
+                self.theaders = t;
+            };
         } else {
             self.headers = task.headers;
         }
@@ -248,5 +227,4 @@ impl Request {
             self.able = task.able;
         }
     }
-
 }

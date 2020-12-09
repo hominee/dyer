@@ -1,8 +1,7 @@
-
-pub mod spider;
 pub mod middleware;
 pub mod pipeline;
+pub mod spider;
 
-pub use spider::*;
 pub use middleware::*;
-pub use pipeline::{Pipeline, MPipeline};
+pub use pipeline::{MPipeline, Pipeline};
+pub use spider::*;

@@ -1,41 +1,37 @@
-use hyper::{Client as hClient, Request as hRequest, client::HttpConnector, Body as hBody};
+use crate::component::{Request, ResError, Response};
+use bytes::buf::ext::BufExt;
+use futures::future::join_all;
+use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use std::sync::{Once, Arc, Mutex};
-use crate::component::{ResError, Response, Request};
-use bytes::buf::ext::BufExt;
-use std::io::{BufReader, Read};
 use std::collections::HashMap;
-use futures::executor::block_on;
-use futures::future::join_all;
+use std::io::{BufReader, Read};
+use std::sync::{Arc, Mutex, Once};
 use tokio::task;
 
-
-pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>; 
+pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 
 pub struct Client;
 
 impl Client {
-    /// new static client 
+    /// new static client
     pub fn new(con: u64, read: u64, write: u64) -> &'static Vec<MClient> {
         static INIT: Once = Once::new();
-        static mut VAL: Vec<MClient> = Vec::new(); 
-        unsafe{
+        static mut VAL: Vec<MClient> = Vec::new();
+        unsafe {
             INIT.call_once(|| {
-                    let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-                    let mut conn = hyper_timeout::TimeoutConnector::new(https);
-                    conn.set_connect_timeout(Some(std::time::Duration::from_secs( con )));
-                    conn.set_read_timeout(Some(std::time::Duration::from_secs(read)));
-                    conn.set_write_timeout(Some(std::time::Duration::from_secs( write )));
-                    let clt = hClient::builder().build::<_, hBody>(conn); 
-                    VAL.push( clt );
+                let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
+                let mut conn = hyper_timeout::TimeoutConnector::new(https);
+                conn.set_connect_timeout(Some(std::time::Duration::from_secs(con)));
+                conn.set_read_timeout(Some(std::time::Duration::from_secs(read)));
+                conn.set_write_timeout(Some(std::time::Duration::from_secs(write)));
+                let clt = hClient::builder().build::<_, hBody>(conn);
+                VAL.push(clt);
             });
             &VAL
         }
     }
-
 }
-
 
 impl Client {
     ///this function require a `hyper::Request` and `hyper::Client` to return the Response
@@ -43,7 +39,7 @@ impl Client {
     pub async fn exec(
         req: hRequest<hBody>,
     ) -> Result<(Option<String>, HashMap<String, String>, usize), ResError> {
-        let client = &Client::new(7,23,7)[0];
+        let client = &Client::new(7, 23, 7)[0];
         let response = client.request(req).await.unwrap();
         let (header, bd) = response.into_parts();
         let bod = hyper::body::aggregate(bd).await;
@@ -71,9 +67,7 @@ impl Client {
         }
     }
 
-    pub async fn exec_one(
-        req: Request,
-    ) -> Result<Response, ResError> {
+    pub async fn exec_one(req: Request) -> Result<Response, ResError> {
         let mut r = Response::default(Some(&req));
         let req = req.init().unwrap();
         let response = Client::exec(req).await;
@@ -92,10 +86,7 @@ impl Client {
     }
 
     // FIXME it's not necessary to return Result, Vec<> will be fine.
-    pub async fn exec_all(
-        reqs: Vec<Request>,
-        result: Arc<Mutex<Vec<Response>>>,
-    ) {
+    pub async fn exec_all(reqs: Vec<Request>, result: Arc<Mutex<Vec<Response>>>) {
         let mut v = Vec::new();
         let mut rs = Vec::new();
         reqs.into_iter().for_each(|req| {
@@ -129,38 +120,45 @@ impl Client {
     }
 
     ///join spawned tokio-task
-    pub fn join(
-        res: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>,
-        pfile: Arc<Mutex<Vec< (u64, task::JoinHandle<()>) >>>
+    pub async fn join(
+        res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
+        pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
     ) {
         let mut ind_r: Vec<usize> = Vec::new();
         let mut handle_r = Vec::new();
         let mut j = 0;
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as u64;
-        res.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as u64;
+        res.lock().unwrap().iter().enumerate().for_each(|(ind, r)| {
             if now - r.0 >= 30 {
-                ind_r.push(ind-j);
+                ind_r.push(ind - j);
                 j += 1;
             }
         });
-        ind_r.into_iter().for_each(|ind|{
+        ind_r.into_iter().for_each(|ind| {
             let (_, handle) = res.lock().unwrap().remove(ind);
             handle_r.push(handle)
         });
 
         let mut ind_p: Vec<usize> = Vec::new();
         let mut j = 0;
-        pfile.lock().unwrap().iter().enumerate().for_each(|(ind, r)|{
-            if now - r.0 >= 30 {
-                ind_p.push(ind-j);
-                j += 1;
-            }
-        });
-        ind_p.into_iter().for_each(|ind|{
+        pfile
+            .lock()
+            .unwrap()
+            .iter()
+            .enumerate()
+            .for_each(|(ind, r)| {
+                if now - r.0 >= 30 {
+                    ind_p.push(ind - j);
+                    j += 1;
+                }
+            });
+        ind_p.into_iter().for_each(|ind| {
             let (_, handle) = pfile.lock().unwrap().remove(ind);
             handle_r.push(handle)
         });
-        block_on( join_all(handle_r) );
+        join_all(handle_r).await;
     }
 }
-

@@ -1,7 +1,7 @@
 use log::error;
 use serde::{Deserialize, Serialize};
 use serde_json;
-use std::io::{BufReader};
+use std::io::BufReader;
 
 #[derive(Serialize, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

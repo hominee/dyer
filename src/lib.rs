@@ -1,7 +1,7 @@
 pub mod component;
-pub mod macros;
 pub mod engine;
+pub mod macros;
 
 pub use component::*;
-pub use macros::{MPipeline, Pipeline, MiddleWare, Spider};
-pub use engine::run;
+pub use engine::{App, AppArg};
+pub use macros::{MPipeline, MiddleWare, Pipeline, Spider};
