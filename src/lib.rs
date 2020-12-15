@@ -4,4 +4,4 @@ pub mod macros;
 
 pub use component::*;
 pub use engine::{App, AppArg};
-pub use macros::{MPipeline, MiddleWare, Pipeline, Spider};
+pub use macros::{ MiddleWare, MiddleWareDefault, Pipeline, PipelineDefault, Spider};

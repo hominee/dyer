@@ -37,7 +37,8 @@ impl Request {
     /// based on the length of both profiles and tasks
     /// to restrict the gen size of request
     /// the num should be provided
-    pub fn gen<T>(apk: &mut App<T>, now: u64, round: usize) {
+    pub fn gen<T>(apk: &mut App<T>,  round: usize) {
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
         //split them into two parts
         let mut ind = Vec::new();
         let mut ndy = Vec::new();

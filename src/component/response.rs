@@ -179,8 +179,8 @@ impl Drop for Response {
 
 impl Response {
     pub fn default(req: Option<&Request>) -> Self {
-        match req {
-            Some(r) => Response {
+        if let Some(r) = req {
+             Response {
                 uri: r.uri.clone(),
                 method: r.method.clone(),
                 cookie: r.cookie.clone().unwrap(),
@@ -195,23 +195,25 @@ impl Response {
                 theaders: r.theaders.clone(),
                 status: 0,
                 pargs: r.pargs.clone(),
-            },
-            None => Response {
-                headers: HashMap::new(),
-                pheaders: HashMap::new(),
-                theaders: HashMap::new(),
-                status: 0,
-                content: None,
-                body: HashMap::new(),
-                uri: "".to_owned(),
-                method: "".to_owned(),
-                cookie: HashMap::new(),
-                created: 0,
+            }
+        } else {
+            let r = Request::default();
+             Response {
+                uri: r.uri,
+                method: r.method,
+                cookie: r.cookie.unwrap(),
+                created: r.created,
                 parser: "parse".to_owned(),
-                targs: None,
+                targs: r.targs,
                 msg: None,
-                pargs: None,
-            },
+                body: r.body.unwrap(),
+                content: None,
+                headers: r.headers.unwrap(),
+                pheaders: r.pheaders,
+                theaders: r.theaders,
+                status: 0,
+                pargs: r.pargs,
+            }
         }
     }
 
@@ -227,7 +229,7 @@ impl Response {
                 let theaders = self.theaders.clone();
                 let profile = Profile {
                     cookie: Some(self.cookie.clone()),
-                    headers: Some(theaders),
+                    headers: Some(pheaders),
                     able: now + 20,
                     created: self.created,
                     pargs: self.pargs.clone(),
@@ -236,7 +238,7 @@ impl Response {
                     uri: self.uri.clone(),
                     method: self.method.clone(),
                     body: Some(self.body.clone()),
-                    headers: Some(pheaders),
+                    headers: Some(theaders),
                     able: now + 20,
                     parser: self.parser.clone(),
                     targs: self.targs.clone(),

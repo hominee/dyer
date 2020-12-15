@@ -5,10 +5,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader, ErrorKind};
 
-use crate::component::{Client, Request, ResError, UserAgent};
-use futures::executor::block_on;
+use crate::component::{Client, Response, Request, ResError, UserAgent};
+use crate::macros::Spider;
 use futures::future::join_all;
-use hyper::{Body as hBody, Request as hRequest};
 use log::{error, info};
 use rand::Rng;
 use serde::{Deserialize, Serialize};
@@ -47,61 +46,39 @@ pub enum ProfileType {
 }
 
 impl Profile {
-    pub async fn exec(req: hRequest<hBody>) -> Result<Profile, ResError> {
-        let client = &Client::new(7, 23, 7)[0];
-        let mut p = Profile::default();
-        let mut hd = p.headers.unwrap();
-        let ua = req
-            .headers()
-            .get("User-Agent")
-            .unwrap()
-            .clone()
-            .to_str()
-            .unwrap()
-            .to_string();
-        hd.insert("User-Agent".to_string(), ua);
-        let r = client.request(req).await;
-        match r {
-            Ok(res) => {
-                let (bd, _) = res.into_parts();
-                let raw_headers = bd.headers;
-
-                let stop_word = ["path", "expires", "domain", "httpOnly"];
-                let mut cookie = HashMap::new();
-                raw_headers.into_iter().for_each(|(k, v)| {
-                    let key = k.unwrap().to_string().trim().to_lowercase();
-                    if key == "set-cookie".to_string() {
-                        let val = v.to_str().unwrap();
-                        let v_str: Vec<&str> = val
-                            .split(";")
-                            .filter(|c| !stop_word.contains(&c.trim()))
-                            .collect();
-                        v_str.into_iter().for_each(|pair| {
-                            let tmp: Vec<&str> = pair.split("=").collect();
-                            if tmp.len() == 2 {
-                                cookie.insert(tmp[0].to_string(), tmp[1].to_string());
-                            }
-                        });
+    pub fn exec(res: &mut Response) -> Result<Profile, ResError> {
+        let raw_headers = &res.headers;
+        let stop_word = ["path", "expires", "domain", "httpOnly"];
+        let mut cookie = HashMap::new();
+        raw_headers.into_iter().for_each(|(k, val)| {
+            if k == "set-cookie" {
+                let v_str: Vec<&str> = val
+                    .split(";")
+                    .filter(|c| !stop_word.contains(&c.trim()))
+                    .collect();
+                v_str.into_iter().for_each(|pair| {
+                    let tmp: Vec<&str> = pair.split("=").collect();
+                    if tmp.len() == 2 {
+                        cookie.insert(tmp[0].to_string(), tmp[1].to_string());
                     }
                 });
-                p.cookie = Some(cookie);
-                p.headers = Some(hd);
-                Ok(p)
             }
-            Err(e) => {
-                return Err(ResError {
-                    desc: e.into_cause().unwrap().source().unwrap().to_string(),
-                });
-            }
-        }
+        });
+        res.cookie = cookie;
+        res.content = Some("".to_string());
+        let (_, profile) = res.into1().unwrap();
+        Ok(profile)
     }
 
-    pub async fn exec_all(
+    pub async fn exec_all<Entity>(
+        spd: &'static dyn Spider<Entity>,
         profiles: Arc<Mutex<Vec<Profile>>>,
         uri: &str,
         num: usize,
         uas: Arc<Vec<UserAgent>>,
     ) {
+        let client = &Client::new(7, 23, 7)[0];
+        let mut rs = vec![];
         let mut vreq = Vec::new();
         vec![0; num].iter().for_each(|_| {
             // select a ua
@@ -111,20 +88,45 @@ impl Profile {
             // construct a new reqeust
             let mut req = Request::default();
             req.uri = uri.clone().to_string();
-            let mut hd = req.headers.unwrap();
+            let mut hd = req.pheaders;
             hd.insert("User-Agent".to_string(), ua);
-            req.headers = Some(hd);
+            req.pheaders = hd;
+            let p = Response::default( Some( &req ) );
+            rs.push( p );
             if let Some(t) = req.init() {
-                vreq.push(Profile::exec(t));
+                vreq.push( client.request(t));
             }
         });
         // poll all request concurrently
-        let vres = block_on(join_all(vreq));
+        let vres = join_all(vreq).await;
         let mut i = 0usize;
-        vres.into_iter().for_each(|res| {
-            if let Ok(p) = res {
-                profiles.lock().unwrap().push(p);
-                i += 1;
+        vres.into_iter().for_each(|r| {
+            let mut p = rs.pop().unwrap();
+            match r {
+                Ok(res) => {
+                    let mut hd_res = HashMap::new();
+                    let (bd, _) = res.into_parts();
+                    let raw_headers = bd.headers;
+                    raw_headers.into_iter().for_each(|(k, v)| {
+                        let key = k.unwrap().to_string();
+                        let val = v.to_str().unwrap_or("").to_string();
+                        hd_res.insert(key, val);
+                    });
+                    p.headers.extend( hd_res );
+                    let f = spd.get_parser("gen_profile");
+                    let profile = match f {
+                        None => { 
+                            Some( Profile::exec( &mut p ).unwrap() )
+                        },
+                        Some(func) => {
+                            let result = func(&p).unwrap();
+                            result.profile 
+                        }
+                    };
+                    profiles.lock().unwrap().extend( profile );
+                    i += 1;
+                },
+                Err(_) => {}
             }
         });
         if i == 0 {
