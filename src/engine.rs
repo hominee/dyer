@@ -7,9 +7,9 @@ extern crate tokio;
 
 use crate::component::{Client, Profile, Request, Response, Task, UserAgent};
 use crate::macros::Spider;
-use crate::macros::{MiddleWare, MiddleWareDefault, PipelineDefault, Pipeline};
+use crate::macros::{MiddleWare, MiddleWareDefault, Pipeline, PipelineDefault};
 use futures::future::join_all;
-use log::{info,};
+use log::info;
 use signal_hook::flag as signal_flag;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -81,6 +81,7 @@ impl<'a, Entity> App<Entity> {
 
     pub async fn run<C>(
         &'a mut self,
+        args: Option<AppArg>,
         spd: &'static dyn Spider<Entity>,
         mware: Option<&'a dyn MiddleWare<Entity>>,
         pline: Option<&'a dyn Pipeline<Entity, C>>,
@@ -90,10 +91,13 @@ impl<'a, Entity> App<Entity> {
         const SIGINT: usize = signal_hook::SIGINT as usize;
         signal_flag::register_usize(signal_hook::SIGINT, Arc::clone(&term), SIGINT).unwrap();
 
-        let args = AppArg::default();
-        let default_pl = PipelineDefault::new(); 
+        let args = match args {
+            Some(para) => para,
+            None => AppArg::default(),
+        };
+        let default_pl = PipelineDefault::new();
         let default_mw = MiddleWareDefault::new();
-        spd.open_spider( self );
+        spd.open_spider(self);
         //skip the history and start new fields to staart with, some Profile required
         if args.skip_history {
             info!("does not skip the history.");
@@ -127,7 +131,7 @@ impl<'a, Entity> App<Entity> {
                     // dispath them
                     match mware {
                         Some(ware) => Response::parse_all(self, 99999999, spd, ware),
-                        None => Response::parse_all(self, 99999999, spd, &default_mw)
+                        None => Response::parse_all(self, 99999999, spd, &default_mw),
                     }
 
                     //store them
@@ -207,7 +211,6 @@ impl<'a, Entity> App<Entity> {
                         Some(ware) => Response::parse_all(self, args.round_res, spd, ware),
                         None => Response::parse_all(self, args.round_res, spd, &default_mw),
                     }
-                    
 
                     //pipeline put out yield_parse_err and Entity
                     if self.yield_err.lock().unwrap().len() > args.round_yield_err {
