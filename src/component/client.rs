@@ -1,23 +1,31 @@
+extern crate brotli2;
+extern crate flate2;
+
 use crate::component::{Request, ResError, Response};
+use crate::engine::{AppArg, Elements};
 use bytes::buf::ext::BufExt;
-use futures::future::join_all;
+use futures::{executor::block_on, future::join_all, Future};
 use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
+use log::{error, info};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex, Once};
+use std::{time, time::UNIX_EPOCH};
 use tokio::task;
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
+type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
 
 pub struct Client;
 
 impl Client {
     /// new static client
-    pub fn new(con: u64, read: u64, write: u64) -> &'static Vec<MClient> {
+    pub fn new(con: u64, read: u64, write: u64) -> &'static Option<MClient> {
         static INIT: Once = Once::new();
-        static mut VAL: Vec<MClient> = Vec::new();
+        static mut VAL: Option<MClient> = None;
         unsafe {
             INIT.call_once(|| {
                 let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
@@ -26,7 +34,7 @@ impl Client {
                 conn.set_read_timeout(Some(std::time::Duration::from_secs(read)));
                 conn.set_write_timeout(Some(std::time::Duration::from_secs(write)));
                 let clt = hClient::builder().build::<_, hBody>(conn);
-                VAL.push(clt);
+                VAL = Some(clt);
             });
             &VAL
         }
@@ -36,41 +44,139 @@ impl Client {
 impl Client {
     ///this function require a `hyper::Request` and `hyper::Client` to return the Response
 
+    pub fn block_exec<F: Future>(f: F) -> F::Output {
+        block_on(f)
+    }
+
     pub async fn exec(
         req: hRequest<hBody>,
-    ) -> Result<(Option<String>, HashMap<String, String>, usize), ResError> {
-        let client = &Client::new(7, 23, 7)[0];
-        let response = client.request(req).await.unwrap();
-        let (header, bd) = response.into_parts();
-        let bod = hyper::body::aggregate(bd).await;
-        match bod {
-            Ok(body) => {
-                let mut reader = BufReader::new(body.reader());
-                let status = header.status.as_u16() as usize;
-                let mut headers: HashMap<String, String> = HashMap::new();
-                header.headers.into_iter().for_each(|(key, value)| {
-                    headers.insert(
-                        key.unwrap().to_string(),
-                        value.to_str().unwrap().to_string(),
-                    );
-                });
+        args: Option<bool>,
+    ) -> Result<(Option<String>, HashMap<String, String>, usize, f64), ResError> {
+        let client = &Client::new(7, 23, 7).as_ref().unwrap();
+        let tic = time::SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64();
+        match client.request(req).await {
+            Ok(response) => {
+                let toc = time::SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs_f64();
+                let gap = toc - tic;
+                match args {
+                    Some(true) | None => {
+                        let (header, bd) = response.into_parts();
+                        let bod = hyper::body::aggregate(bd).await;
+                        match bod {
+                            Ok(body) => {
+                                let mut encoding = "".to_string();
+                                let mut reader = BufReader::new(body.reader());
+                                let status = header.status.as_u16() as usize;
+                                let mut headers: HashMap<String, String> = HashMap::new();
+                                let cookies: Vec<&str> = header
+                                    .headers
+                                    .get_all("set-cookie")
+                                    .iter()
+                                    .map(|s| s.to_str().unwrap())
+                                    .collect();
+                                let cookie = cookies.join("::");
+                                headers.insert("set-cookie".to_string(), cookie);
+                                header
+                                    .headers
+                                    .into_iter()
+                                    .for_each(|(key, value)| match key {
+                                        None => {}
+                                        Some(k) => {
+                                            let kk = k.to_string();
+                                            if kk.to_lowercase() == "content-encoding".to_string() {
+                                                encoding = value.to_str().unwrap().to_string();
+                                            }
+                                            if kk != "set-cookie".to_string() {
+                                                headers.insert(
+                                                    kk,
+                                                    value.to_str().unwrap().to_string(),
+                                                );
+                                            }
+                                        }
+                                    });
 
-                // Response Content
-                let mut data = String::new();
-                reader.read_to_string(&mut data).unwrap();
+                                // Response Content
+                                let mut data = String::new();
+                                if encoding == "gzip".to_string()
+                                    || encoding == "deflate".to_string()
+                                {
+                                    let mut gz = flate2::read::GzDecoder::new(reader);
+                                    gz.read_to_string(&mut data).unwrap();
+                                } else if encoding == "br".to_string() {
+                                    let mut br = brotli2::read::BrotliDecoder::new(reader);
+                                    br.read_to_string(&mut data).unwrap();
+                                } else {
+                                    reader.read_to_string(&mut data).unwrap();
+                                }
 
-                Ok((Some(data), headers, status))
+                                Ok((Some(data), headers, status, gap))
+                            }
+                            Err(e) => Err(ResError {
+                                desc: e.into_cause().unwrap().to_string(),
+                            }),
+                        }
+                    }
+                    Some(false) => {
+                        let (header, _) = response.into_parts();
+                        let mut encoding = "".to_string();
+                        let status = header.status.as_u16() as usize;
+                        let mut headers: HashMap<String, String> = HashMap::new();
+                        let cookies: Vec<&str> = header
+                            .headers
+                            .get_all("set-cookie")
+                            .iter()
+                            .map(|s| s.to_str().unwrap())
+                            .collect();
+                        let cookie = cookies.join("::");
+                        headers.insert("set-cookie".to_string(), cookie);
+                        header
+                            .headers
+                            .into_iter()
+                            .for_each(|(key, value)| match key {
+                                None => {}
+                                Some(k) => {
+                                    let kk = k.to_string();
+                                    if kk.to_lowercase() == "content-encoding".to_string() {
+                                        encoding = value.to_str().unwrap().to_string();
+                                    }
+                                    if kk != "set-cookie".to_string() {
+                                        headers.insert(kk, value.to_str().unwrap().to_string());
+                                    }
+                                }
+                            });
+
+                        Ok((None, headers, status, gap))
+                    }
+                }
             }
-            Err(e) => Err(ResError {
-                desc: e.into_cause().unwrap().source().unwrap().to_string(),
-            }),
+            Err(e) => {
+                let err = e.into_cause().unwrap().to_string();
+                log::error!("cannot exec the request caused by {}.", err);
+                Err(ResError { desc: err })
+            }
         }
     }
 
-    pub async fn exec_one(req: Request) -> Result<Response, ResError> {
+    pub async fn exec_one<'a, E, T, P>(
+        req: Request<T, P>,
+        f: Option<
+            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
+        >,
+    ) -> Result<Response<T, P>, ResError>
+    where
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        E: Serialize + std::fmt::Debug + Clone,
+    {
         let mut r = Response::default(Some(&req));
-        let req = req.init().unwrap();
-        let response = Client::exec(req).await;
+        let request = req.init::<E>(f).unwrap();
+        let response = Client::exec(request, None).await;
 
         match response {
             Ok(data) => {
@@ -86,23 +192,37 @@ impl Client {
     }
 
     // FIXME it's not necessary to return Result, Vec<> will be fine.
-    pub async fn exec_all(reqs: Vec<Request>, result: Arc<Mutex<Vec<Response>>>) {
-        let mut v = Vec::new();
+    pub async fn exec_all<'a, E, T, P>(
+        mut reqs: Vec<Request<T, P>>,
+        result: Arc<Mutex<Vec<Response<T, P>>>>,
+        args: Arc<Mutex<AppArg>>,
+        f: Option<
+            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
+        >,
+    ) where
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        E: Serialize + std::fmt::Debug + Clone,
+    {
         let mut rs = Vec::new();
-        reqs.into_iter().for_each(|req| {
-            rs.push(Response::default(Some(&req)));
-            if let Some(r) = req.init() {
-                v.push(r);
-            }
-        });
-
+        let mut ress = Vec::new();
         let mut futs = Vec::new();
-        v.into_iter().for_each(|req| {
-            let fut = Client::exec(req);
-            futs.push(fut);
-        });
+        let len_reqs = reqs.len();
+        for _ in 0..len_reqs {
+            let req = reqs.pop().unwrap();
+            rs.push(Response::default(Some(&req)));
+            match req.init(f) {
+                Some(r) => futs.push(Client::exec(r, None)),
+                None => {
+                    rs.remove(0);
+                    error!("cannot init Request into hyper::Request");
+                }
+            }
+        }
+
         let mut res = join_all(futs).await;
-        for _ in 0..rs.len() {
+        let len_rs = rs.len();
+        for _ in 0..len_rs {
             let mut r = rs.pop().unwrap();
             let d = res.pop().unwrap();
             match d {
@@ -110,29 +230,34 @@ impl Client {
                     r.content = da.0;
                     r.headers = da.1;
                     r.status = da.2;
+                    ress.push(r);
+                    args.lock().unwrap().rate.stamps.push(da.3);
                 }
                 Err(e) => {
                     r.msg = Some(e.desc);
+                    args.lock().unwrap().rate.err += 1;
+                    ress.push(r);
                 }
             }
         }
-        result.lock().unwrap().extend(rs);
+        result.lock().unwrap().extend(ress);
     }
 
     ///join spawned tokio-task
-    pub async fn join(
+    pub async fn watch(
         res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
         pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
+        threshold: u64,
     ) {
         let mut ind_r: Vec<usize> = Vec::new();
         let mut handle_r = Vec::new();
-        let mut j = 0;
+        let mut j = 0usize;
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() as u64;
+            .as_secs_f64();
         res.lock().unwrap().iter().enumerate().for_each(|(ind, r)| {
-            if now - r.0 >= 30 {
+            if now - r.0 as f64 >= threshold as f64 {
                 ind_r.push(ind - j);
                 j += 1;
             }
@@ -141,6 +266,17 @@ impl Client {
             let (_, handle) = res.lock().unwrap().remove(ind);
             handle_r.push(handle)
         });
+        // no non-out-of-schedule response attained, join the first one instead
+        if handle_r.is_empty() && !res.lock().unwrap().is_empty() {
+            let (tic, handle) = res.lock().unwrap().remove(0);
+            //handle_r.push(handle);
+            if now - tic as f64 >= 1.618 {
+                handle_r.push(handle)
+            } else {
+                res.lock().unwrap().insert(0, (tic, handle));
+            }
+        }
+        info!("joining {} response for Response.", handle_r.len());
 
         let mut ind_p: Vec<usize> = Vec::new();
         let mut j = 0;
@@ -150,15 +286,25 @@ impl Client {
             .iter()
             .enumerate()
             .for_each(|(ind, r)| {
-                if now - r.0 >= 30 {
+                if now - r.0 as f64 >= threshold as f64 {
                     ind_p.push(ind - j);
                     j += 1;
                 }
             });
+        info!("joining {} response for Profile.", j);
         ind_p.into_iter().for_each(|ind| {
             let (_, handle) = pfile.lock().unwrap().remove(ind);
             handle_r.push(handle)
         });
         join_all(handle_r).await;
+    }
+
+    /// wrapper of futures::future::join_all
+    pub async fn join_all<I>(i: I) -> Vec<<<I as IntoIterator>::Item as Future>::Output>
+    where
+        I: IntoIterator,
+        I::Item: Future,
+    {
+        join_all(i).await
     }
 }

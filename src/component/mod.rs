@@ -1,16 +1,18 @@
-mod client;
-mod profile;
-mod request;
-mod response;
-mod task;
-mod useragent;
+pub mod client;
+pub mod profile;
+pub mod request;
+pub mod response;
+pub mod task;
+pub mod useragent;
+pub mod utils;
 
 pub use client::Client;
-pub use profile::{PArgs, Profile};
+pub use profile::Profile;
 pub use request::Request;
 pub use response::{ParseResult, Response};
-pub use task::{TArgs, Task};
+pub use task::Task;
 pub use useragent::UserAgent;
+pub use utils::get_cookie;
 
 use std::error::Error;
 use std::fmt::Debug;

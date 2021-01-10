@@ -4,21 +4,27 @@ extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
-use crate::component::{PArgs, Profile, TArgs, Task};
-use crate::engine::App;
+use crate::component::{Profile, Task};
+use crate::engine::Elements;
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
+use log::{debug, error};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::fs;
-use std::io::LineWriter;
-use std::io::{BufRead, BufReader, ErrorKind};
+use std::io::Write;
+use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
-#[derive(Serialize, Deserialize, Debug)]
-pub struct Request {
+type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(
+    bound = "TArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone, PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone"
+)]
+pub struct Request<TArgs, PArgs> {
     pub uri: String,
     pub method: String,
     pub headers: Option<std::collections::HashMap<String, String>>,
@@ -27,48 +33,113 @@ pub struct Request {
     pub cookie: Option<std::collections::HashMap<String, String>>,
     pub body: Option<std::collections::HashMap<String, String>>,
     pub able: u64,
+    pub trys: u8,
     pub created: u64,
+    pub parser: String,
     pub targs: Option<TArgs>,
     pub pargs: Option<PArgs>,
 }
-unsafe impl Send for Request {}
+unsafe impl<TArgs, PArgs> Send for Request<TArgs, PArgs> {}
 
-impl Request {
+impl<T, P> Request<T, P>
+where
+    T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+    P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+{
     /// based on the length of both profiles and tasks
     /// to restrict the gen size of request
     /// the num should be provided
-    pub fn gen<T>(apk: &mut App<T>,  round: usize) {
-        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    pub fn gen<'a, E>(
+        profile: Arc<Mutex<Vec<Profile<P>>>>,
+        tasks: Arc<Mutex<Vec<Task<T>>>>,
+        round: usize,
+        f: Option<
+            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
+        >,
+    ) -> Vec<Request<T, P>>
+    where
+        E: Serialize + std::fmt::Debug + Clone,
+    {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         //split them into two parts
         let mut ind = Vec::new();
         let mut ndy = Vec::new();
         let mut j = 0;
 
-        let len_p = apk.profile.lock().unwrap().len();
-        let len_t = apk.task.lock().unwrap().len();
+        let len_p = profile.lock().unwrap().len();
+        let len_t = tasks.lock().unwrap().len();
         let len = len_t.min(len_p);
         for i in 0..round.min(len) {
-            let p = &apk.profile.lock().unwrap()[i];
+            let p = &profile.lock().unwrap()[i];
             if p.able <= now {
                 ind.push(i - j);
                 j += 1;
             }
         }
 
+        debug!("all {} request are going to created.", j);
         ind.into_iter().for_each(|index| {
-            let mut req = Request::default();
-            let p = apk.profile.lock().unwrap().remove(index);
-            let task = apk.task.lock().unwrap().pop().unwrap();
-            req.from_task(task);
-            req.from_profile(p);
-            ndy.push(req);
+            let p = profile.lock().unwrap().remove(index);
+            let task = tasks.lock().unwrap().pop().unwrap();
+            let result = if let Some(func) = f {
+                let req = if let Ok(Elements::Req(request)) = func(Elements::Array(vec![
+                    Elements::Pfile(p),
+                    Elements::Tsk(task),
+                ])) {
+                    request
+                } else {
+                    panic!("must return request correctly.");
+                };
+                req
+            } else {
+                let mut req = Request::default();
+                req.from_task(task);
+                req.from_profile(p);
+                req
+            };
+            debug!("generate 1 request: {:?}", result);
+            if result.parser == "".to_string() {
+                panic!("generate request failer missing parser : {:?}", result);
+            }
+            ndy.push(result);
         });
-        apk.req.lock().unwrap().extend(ndy);
+        ndy
     }
 }
 
-impl Request {
-    pub fn init(self) -> Option<hRequest<hBody>> {
+impl<T, P> Request<T, P>
+where
+    T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
+    P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
+{
+    pub fn init<'a, E>(
+        mut self,
+        f: Option<
+            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
+        >,
+    ) -> Option<hRequest<hBody>>
+    where
+        E: Serialize + std::fmt::Debug + Clone,
+    {
+        if let Some(ff) = f {
+            let request = match ff(Elements::Req(self.clone())) {
+                Ok(req) => {
+                    if let Elements::Req(req) = req {
+                        req
+                    } else {
+                        self
+                    }
+                }
+                Err(_) => {
+                    error!("not use request_init or use it right.");
+                    self
+                }
+            };
+            self = request;
+        };
         let mut builder = hRequest::builder();
         // initialize headers
         let headers = builder.headers_mut().unwrap();
@@ -81,7 +152,7 @@ impl Request {
                 cookies.iter().for_each(|(key, value)| {
                     v.push(format!("{}={}", key, value));
                 });
-                cookie = v.join(";");
+                cookie = v.join("; ");
 
                 headers.insert(
                     HeaderName::from_str("cookie").unwrap(),
@@ -90,8 +161,23 @@ impl Request {
             }
             None => {}
         }
-        let head = self.headers.to_owned().unwrap();
-        head.iter().for_each(|(k, v)| {
+        if let Some(head) = self.headers.to_owned() {
+            head.iter().for_each(|(k, v)| {
+                headers.insert(
+                    HeaderName::from_str(k.as_str()).unwrap(),
+                    HeaderValue::from_str(v.as_str()).unwrap(),
+                );
+            });
+        }
+        let thead = self.theaders.to_owned();
+        thead.iter().for_each(|(k, v)| {
+            headers.insert(
+                HeaderName::from_str(k.as_str()).unwrap(),
+                HeaderValue::from_str(v.as_str()).unwrap(),
+            );
+        });
+        let phead = self.pheaders.to_owned();
+        phead.iter().for_each(|(k, v)| {
             headers.insert(
                 HeaderName::from_str(k.as_str()).unwrap(),
                 HeaderValue::from_str(v.as_str()).unwrap(),
@@ -110,122 +196,156 @@ impl Request {
                     v.push(format!("{}={}", key, value));
                 });
                 let s = v.join("&");
-                return Some(builds.body(hBody::from(s)).unwrap());
+                let data = Some(builds.body(hBody::from(s)).unwrap());
+                log::trace!("request with body: {:?}", data);
+                return data;
             }
-            None => {}
+            None => {
+                let data = Some(builds.body(hBody::default()).unwrap());
+                log::trace!("request without body: {:?}", data);
+                return data;
+            }
         }
-        None
     }
 }
 
-impl Default for Request {
-    fn default() -> Self {
+impl<T, P> Default for Request<T, P>
+where
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+{
+    fn default() -> Request<T, P> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
-            "Accept".to_owned(),
+            "accept".to_owned(),
             "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8".to_owned(),
         );
-        headers.insert("Accept-Encoding".to_owned(), "gzip, deflate, br".to_owned());
-        headers.insert("Accept-Language".to_owned(), "en-US,en;q=0.5".to_owned());
-        headers.insert("Cache-Control".to_owned(), "no-cache".to_owned());
-        headers.insert("Connection".to_owned(), "keep-alive".to_owned());
-        headers.insert("Pragma".to_owned(), "no-cache".to_owned());
-        headers.insert("Upgrade-Insecure-Requests".to_owned(), "1".to_owned());
+        headers.insert("accept-encoding".to_owned(), "gzip, deflate, br".to_owned());
+        headers.insert("accept-language".to_owned(), "en-US,en;q=0.5".to_owned());
+        headers.insert("cache-control".to_owned(), "no-cache".to_owned());
+        headers.insert("connection".to_owned(), "keep-alive".to_owned());
+        headers.insert("pragma".to_owned(), "no-cache".to_owned());
+        headers.insert("upgrade-insecure-requests".to_owned(), "1".to_owned());
         headers.insert(
-            "User-Agent".to_owned(),
+            "user-agent".to_owned(),
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:77.0) Gecko/20100101 Firefox/77.0"
                 .to_owned(),
         );
-        Request {
-            uri: "".to_owned(),
+        Request::<T, P> {
+            uri: "".to_string(),
             method: "GET".to_owned(),
-            headers: Some(headers),
-            pheaders: HashMap::new(),
+            parser: "".to_string(),
+            headers: None,
+            pheaders: headers,
             theaders: HashMap::new(),
             cookie: None,
             body: None,
-            able: 0,
-            created: 0,
+            able: now,
+            trys: 0,
+            created: now,
             targs: None,
             pargs: None,
         }
     }
 }
 
-impl Request {
-    pub fn stored(path: &str, reqs: &Arc<Mutex<Vec<Request>>>) {
-        let file = fs::File::open(path).unwrap();
-        let mut writer = LineWriter::new(file);
+impl<T, P> Request<T, P>
+where
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+{
+    pub fn stored(path: &str, reqs: &mut Arc<Mutex<Vec<Request<T, P>>>>) {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        let mut buf = Vec::new();
         reqs.lock().unwrap().iter().for_each(|req| {
-            serde_json::to_writer(&mut writer, req).unwrap();
+            let s = serde_json::to_string(&req).unwrap();
+            buf.push(s);
         });
+        file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
-    pub fn load(path: &str) -> Option<Vec<Request>> {
+    pub fn load(path: &str) -> Option<Vec<Request<T, P>>> {
         // load Profile here
-        let file = fs::File::open(path);
-        match file {
-            Err(e) => match e.kind() {
-                ErrorKind::NotFound => {
-                    // create request_old file and  old file
-                    fs::File::create(path).unwrap();
-                    fs::File::create(path.to_string() + "_old").unwrap();
-                    return None;
-                }
-                _ => unreachable!(),
-            },
-            Ok(content) => {
-                let buf = BufReader::new(content).lines();
-                let mut data: Vec<Request> = Vec::new();
-                buf.into_iter().for_each(|line| {
-                    let req: Request = serde_json::from_str(&line.unwrap()).unwrap();
-                    data.push(req);
-                });
-                // remove request_old file and rename current file to old file
-                fs::remove_file(path.to_string() + "_old").unwrap();
-                fs::rename(path, path.to_string() + "_old").unwrap();
-                return Some(data);
-            }
-        }
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .unwrap();
+        let data = BufReader::new(&file)
+            .lines()
+            .map(|line| {
+                let s = line.unwrap().to_string();
+                let task: Request<T, P> = serde_json::from_str(&s).unwrap();
+                task
+            })
+            .collect::<Vec<Request<T, P>>>();
+        return Some(data);
     }
 }
 
-impl Request {
-    pub fn from_profile(&mut self, profile: Profile) {
+impl<T, P> Request<T, P>
+where
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+{
+    pub fn from_profile(&mut self, profile: Profile<P>) {
         if let Some(mut cookie) = self.cookie.to_owned() {
             cookie.extend(profile.cookie.unwrap());
         } else {
             self.cookie = profile.cookie;
         }
-        if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(profile.headers.clone().unwrap());
-            if let Some(p) = profile.headers {
-                self.pheaders = p;
-            }
-        } else {
-            self.headers = profile.headers;
-        }
+        if let Some(p) = profile.headers {
+            self.pheaders = p;
+        };
         if self.able < profile.able {
             self.able = profile.able;
         }
         self.created = profile.created;
         self.pargs = profile.pargs;
     }
-    pub fn from_task(&mut self, task: Task) {
+
+    pub fn from_task(&mut self, task: Task<T>) {
         self.uri = task.uri;
         self.method = task.method;
-        if let Some(mut headers) = self.headers.to_owned() {
-            headers.extend(task.headers.clone().unwrap());
-            if let Some(t) = task.headers {
-                self.theaders = t;
-            };
-        } else {
-            self.headers = task.headers;
-        }
+        if let Some(t) = task.headers {
+            self.theaders = t;
+        };
         self.targs = task.targs;
+        self.parser = task.parser;
         self.body = task.body;
         if self.able < task.able {
             self.able = task.able;
         }
+    }
+
+    pub fn into1(self) -> (Profile<P>, Task<T>) {
+        let task = Task {
+            uri: self.uri,
+            method: self.method,
+            headers: self.headers,
+            targs: self.targs,
+            parser: self.parser,
+            body: self.body,
+            able: self.able,
+            trys: self.trys,
+        };
+        let profile = Profile {
+            cookie: self.cookie,
+            headers: Some(self.pheaders),
+            able: self.able,
+            created: self.created,
+            pargs: self.pargs,
+        };
+        (profile, task)
     }
 }
