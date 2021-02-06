@@ -2,7 +2,7 @@ extern crate brotli2;
 extern crate flate2;
 
 use crate::component::{Request, ResError, Response};
-use crate::engine::{AppArg, Elements};
+use crate::engine::AppArg;
 use bytes::buf::ext::BufExt;
 use futures::{executor::block_on, future::join_all, Future};
 use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
@@ -17,7 +17,6 @@ use std::{time, time::UNIX_EPOCH};
 use tokio::task;
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
-type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
 
 pub struct Client;
 
@@ -46,6 +45,30 @@ impl Client {
 
     pub fn block_exec<F: Future>(f: F) -> F::Output {
         block_on(f)
+    }
+
+    pub async fn request<T, P>(req: Request<T, P>) -> Response<T, P>
+    where
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+    {
+        let mut r = Response::default(Some(&req));
+        match req.init() {
+            None => r,
+            Some(request) => match Client::exec(request, None).await {
+                Ok(res) => {
+                    r.content = res.0;
+                    r.headers = res.1;
+                    r.status = res.2;
+                    r
+                }
+                Err(e) => {
+                    log::error!("failed Request: {:?}", e.desc);
+                    r.msg = Some(e.desc);
+                    r
+                }
+            },
+        }
     }
 
     pub async fn exec(
@@ -92,7 +115,7 @@ impl Client {
                                             if kk.to_lowercase() == "content-encoding".to_string() {
                                                 encoding = value.to_str().unwrap().to_string();
                                             }
-                                            if kk != "set-cookie".to_string() {
+                                            if &kk != "set-cookie" {
                                                 headers.insert(
                                                     kk,
                                                     value.to_str().unwrap().to_string(),
@@ -163,19 +186,13 @@ impl Client {
         }
     }
 
-    pub async fn exec_one<'a, E, T, P>(
-        req: Request<T, P>,
-        f: Option<
-            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
-        >,
-    ) -> Result<Response<T, P>, ResError>
+    pub async fn exec_one<T, P>(req: Request<T, P>) -> Result<Response<T, P>, ResError>
     where
         T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-        E: Serialize + std::fmt::Debug + Clone,
     {
         let mut r = Response::default(Some(&req));
-        let request = req.init::<E>(f).unwrap();
+        let request = req.init().unwrap();
         let response = Client::exec(request, None).await;
 
         match response {
@@ -192,17 +209,13 @@ impl Client {
     }
 
     // FIXME it's not necessary to return Result, Vec<> will be fine.
-    pub async fn exec_all<'a, E, T, P>(
+    pub async fn exec_all<T, P>(
         mut reqs: Vec<Request<T, P>>,
         result: Arc<Mutex<Vec<Response<T, P>>>>,
         args: Arc<Mutex<AppArg>>,
-        f: Option<
-            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
-        >,
     ) where
         T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-        E: Serialize + std::fmt::Debug + Clone,
     {
         let mut rs = Vec::new();
         let mut ress = Vec::new();
@@ -211,7 +224,7 @@ impl Client {
         for _ in 0..len_reqs {
             let req = reqs.pop().unwrap();
             rs.push(Response::default(Some(&req)));
-            match req.init(f) {
+            match req.init() {
                 Some(r) => futs.push(Client::exec(r, None)),
                 None => {
                     rs.remove(0);
@@ -249,6 +262,7 @@ impl Client {
         pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
         threshold: u64,
     ) {
+        log::info!("future response length: {}", res.lock().unwrap().len());
         let mut ind_r: Vec<usize> = Vec::new();
         let mut handle_r = Vec::new();
         let mut j = 0usize;
@@ -262,6 +276,7 @@ impl Client {
                 j += 1;
             }
         });
+        log::info!("availible response length: {}", ind_r.len());
         ind_r.into_iter().for_each(|ind| {
             let (_, handle) = res.lock().unwrap().remove(ind);
             handle_r.push(handle)
@@ -270,13 +285,17 @@ impl Client {
         if handle_r.is_empty() && !res.lock().unwrap().is_empty() {
             let (tic, handle) = res.lock().unwrap().remove(0);
             //handle_r.push(handle);
-            if now - tic as f64 >= 1.618 {
+            if now - tic as f64 >= 2.718 {
                 handle_r.push(handle)
             } else {
                 res.lock().unwrap().insert(0, (tic, handle));
             }
         }
-        info!("joining {} response for Response.", handle_r.len());
+        info!(
+            "joining {} response out of {} for Response.",
+            handle_r.len(),
+            res.lock().unwrap().len()
+        );
 
         let mut ind_p: Vec<usize> = Vec::new();
         let mut j = 0;

@@ -6,7 +6,6 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 
 use crate::component::{utils, Client, Request, ResError, Response, Task, UserAgent};
-use crate::engine::Elements;
 use futures::future::join_all;
 use log::{error, info};
 use rand::Rng;
@@ -15,16 +14,16 @@ use std::fmt::Debug;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
+//type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(bound = "PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
 pub struct Profile<PArgs>
 where
     PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub headers: Option<HashMap<String, String>>,
-    pub cookie: Option<HashMap<String, String>>,
+    pub headers: HashMap<String, String>,
+    pub cookie: HashMap<String, String>,
     pub able: u64,
     pub created: u64,
     pub pargs: Option<PArgs>,
@@ -58,7 +57,7 @@ impl<P> Profile<P>
 where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub fn exec<T>(res: &mut Response<T, P>, gap: u64) -> Result<Profile<P>, ResError>
+    pub fn exec<T>(res: &mut Response<T, P>) -> Result<Profile<P>, ResError>
     where
         T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
     {
@@ -67,20 +66,16 @@ where
         if let Some(data) = raw_headers.get("set-cookie") {
             cookie = utils::get_cookie(data);
         };
-        res.cookie = cookie;
+        res.profile.cookie = cookie;
         res.content = Some("".to_string());
-        let (_, profile) = res.into1(gap).unwrap();
-        Ok(profile)
+        Ok(res.profile.clone())
     }
 
     pub async fn exec_all<'a, E, T>(
-        f: Option<
-            &'a (dyn Fn(Elements<'a, E, T, P>) -> Sitem<Elements<'a, E, T, P>> + Send + Sync),
-        >,
+        //f: Option<&'a (dyn Fn(Response<T, P>) -> Sitem<ParseResult<E, T, P>> + Send + Sync)>,
         profiles: Arc<Mutex<Vec<Profile<P>>>>,
         uri: &str,
         num: usize,
-        gap: u64,
         uas: Arc<Vec<UserAgent>>,
     ) where
         T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
@@ -96,11 +91,11 @@ where
             let ua = uas[ind].clone().user_agent;
             // construct a new reqeust
             let mut req = Request::<T, P>::default();
-            req.uri = uri.clone().to_string();
-            req.pheaders.insert("user-agent".to_string(), ua);
+            req.task.uri = uri.clone().to_string();
+            req.profile.headers.insert("user-agent".to_string(), ua);
             let p = Response::default(Some(&req));
             rs.push(p);
-            if let Some(t) = req.init::<E>(None) {
+            if let Some(t) = req.init() {
                 log::trace!("Request that to generate Profile: {:?}", t);
                 vreq.push(Client::exec(t, Some(false)));
             }
@@ -114,17 +109,20 @@ where
                 Ok(res) => {
                     p.headers.extend(res.1);
                     p.status = res.2;
-                    let profile = match f {
-                        None => Some(Profile::exec(&mut p, gap).unwrap()),
-                        Some(func) => {
-                            if let Elements::Pfile(mut result) = func(Elements::Res(p)).unwrap() {
-                                result.able += gap;
-                                Some(result)
-                            } else {
-                                None
-                            }
-                        }
-                    };
+                    let profile = Some(Profile::exec(&mut p).unwrap());
+                    /*
+                     *let profile = match f {
+                     *    None => Some(),
+                     *    Some(func) => {
+                     *        if let Elements::Pfile(mut result) = func(Elements::Res(p)).unwrap() {
+                     *            result.able += gap;
+                     *            Some(result)
+                     *        } else {
+                     *            None
+                     *        }
+                     *    }
+                     *};
+                     */
                     log::trace!("gen profile: {:?}", profile);
                     profiles.lock().unwrap().extend(profile);
                     i += 1;
@@ -186,9 +184,8 @@ where
         let mut profiles = Vec::new();
         if let Some(reqs) = Request::<T, P>::load(path) {
             reqs.into_iter().for_each(|req| {
-                let (profile, task) = req.into1();
-                tasks.push(task);
-                profiles.push(profile);
+                tasks.push(req.task);
+                profiles.push(req.profile);
             });
         }
         (profiles, tasks)
@@ -225,8 +222,8 @@ where
                 .to_string(),
         );
         Profile::<P> {
-            headers: Some(headers),
-            cookie: None,
+            headers: headers,
+            cookie: HashMap::new(),
             able: now,
             created: now,
             pargs: None,

@@ -15,20 +15,22 @@ where
     async fn process_yielderr(&self, item: &mut Arc<Mutex<Vec<String>>>);
 }
 
-pub struct PipelineDefault<T> {
-    data: std::marker::PhantomData<T>,
+pub struct PipelineDefault<T, C> {
+    _t: std::marker::PhantomData<T>,
+    _c: std::marker::PhantomData<C>,
 }
 
-impl<T> PipelineDefault<T> {
+impl<T, C> PipelineDefault<T, C> {
     pub fn new() -> Self {
         PipelineDefault {
-            data: std::marker::PhantomData::<T>,
+            _t: std::marker::PhantomData::<T>,
+            _c: std::marker::PhantomData::<C>,
         }
     }
 }
 
 #[async_trait]
-impl<T> Pipeline<T, std::fs::File> for PipelineDefault<T>
+impl<T> Pipeline<T, std::fs::File> for PipelineDefault<T, std::fs::File>
 where
     T: std::fmt::Debug + Send + Sync,
 {

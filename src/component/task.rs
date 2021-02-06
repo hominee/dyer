@@ -9,7 +9,7 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Clone, Serialize)]
 #[serde(bound = "TArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
 pub struct Task<TArgs>
 where
@@ -17,7 +17,7 @@ where
 {
     pub uri: String,
     pub method: String,
-    pub headers: Option<HashMap<String, String>>,
+    pub headers: HashMap<String, String>,
     pub body: Option<HashMap<String, String>>,
     pub able: u64,
     pub trys: u8,
@@ -76,7 +76,7 @@ where
         Task::<T> {
             uri: "".to_string(),
             method: "GET".to_string(),
-            headers: None,
+            headers: HashMap::new(),
             body: None,
             able: now,
             trys: 0,

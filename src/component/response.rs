@@ -4,8 +4,8 @@ extern crate hyper;
 extern crate hyper_tls;
 
 use crate::component::{ParseError, Profile, Request, Task};
-use crate::engine::{App, Elements};
-use crate::macros::{MethodIndex, MiddleWare, Spider};
+use crate::engine::App;
+use crate::macros::{MiddleWare, MiddleWareDefault, Spider};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ where
 {
     pub req: Option<Request<T, P>>,
     pub task: Option<Vec<Task<T>>>,
-    pub profile: Option<Profile<P>>,
+    pub profile: Option<Vec<Profile<P>>>,
     pub entities: Option<Vec<E>>,
     pub yield_err: Option<String>,
     pub low_mode: bool,
@@ -42,91 +42,114 @@ where
 #[derive(Clone, Debug)]
 pub struct Response<T, P>
 where
-    T: Debug + Clone,
-    P: Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
-    pub headers: HashMap<String, String>,
-    pub pheaders: HashMap<String, String>,
-    pub theaders: HashMap<String, String>,
+    pub task: Task<T>,
+    pub profile: Profile<P>,
     pub status: usize,
     pub trys: u8,
     pub content: Option<String>,
-    pub body: HashMap<String, String>,
-    pub uri: String,
-    pub method: String,
-    pub cookie: HashMap<String, String>,
-    pub created: u64,
-    pub parser: String,
-    pub targs: Option<T>,
+    pub headers: HashMap<String, String>,
     pub msg: Option<String>,
-    pub pargs: Option<P>,
 }
 unsafe impl<T, P> Sync for Response<T, P>
 where
-    T: Debug + Clone,
-    P: Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
 }
 unsafe impl<T, P> Send for Response<T, P>
 where
-    T: Debug + Clone,
-    P: Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
 }
 
-impl<T, P> Response<T, P>
+impl<'t, T, P> Response<T, P>
 where
-    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone + Send,
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub fn parse<E>(
+    pub async fn parse<E, C>(
         mut res: Response<T, P>,
-        spd: &'static dyn Spider<E, T, P>,
-        mware: &dyn MiddleWare<E, T, P>,
-        gap: u64,
+        spd: &'static dyn Spider<E, T, P, C>,
+        mware: &'t Option<Box<dyn MiddleWare<E, T, P, C>>>,
+        default_mw: Option<&'t MiddleWareDefault<E, T, P, C>>,
     ) -> Result<ParseResult<E, T, P>, ParseError>
     where
-        E: Serialize + std::fmt::Debug + Clone,
+        E: Serialize + std::fmt::Debug + Clone + Send,
+        C: Send,
     {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
-            debug!("successful Response: uri: {}", &res.uri[0..77]);
+            debug!("successful Response: uri: {}", &res.task.uri[0..77]);
             // status code between 200 - 299
-            mware.hand_res(&mut res);
-            let (_, p): (Task<T>, Profile<P>) = res.into1(gap).unwrap();
+            if mware.is_some() {
+                mware.as_ref().unwrap().hand_res(&mut res).await;
+            } else {
+                default_mw.unwrap().hand_res(&mut res).await;
+            }
+            if mware.is_some() {
+                mware.as_ref().unwrap().hand_profile(&mut res.profile).await;
+            } else {
+                default_mw.unwrap().hand_profile(&mut res.profile).await;
+            }
             info!("recycle profile");
             let mut r = ParseResult {
                 req: None,
                 task: None,
-                profile: Some(p),
+                profile: Some(vec![res.profile.clone()]),
                 entities: None,
                 yield_err: None,
                 low_mode: false,
             };
             let content = res.content.clone().unwrap();
-            let uri = res.uri.clone();
-            let ind = (&res.parser).to_string();
+            let uri = res.task.uri.clone();
+            let ind = (&res.task.parser).to_string();
             let parser = spd
-                .get_parser(MethodIndex::String(ind))
-                .expect(&format!("parser {} not found.", &res.parser));
-            let data = (parser)(Elements::Res(res));
+                .get_parser(ind)
+                .expect(&format!("parser {} not found.", &res.task.parser));
+            let data = (parser)(res);
             match data {
-                Ok(v) => match v {
-                    Elements::PrsRst(prs) => {
-                        if let Some(mut items) = prs.entities {
-                            mware.hand_item(&mut items);
-                            r.entities = Some(items);
+                Ok(prs) => {
+                    if let Some(mut items) = prs.entities {
+                        if mware.is_some() {
+                            mware.as_ref().unwrap().hand_item(&mut items).await;
+                        } else {
+                            default_mw.unwrap().hand_item(&mut items).await;
                         }
-                        r.yield_err = prs.yield_err;
-                        r.task = prs.task;
-                        r.req = prs.req;
+                        r.entities = Some(items);
                     }
-                    _ => {
-                        error!("in parsing Response encountering unexpected type,");
-                        unreachable!();
+                    if let Some(mut tasks) = prs.task {
+                        if mware.is_some() {
+                            mware.as_ref().unwrap().hand_task(&mut tasks).await;
+                        } else {
+                            default_mw.unwrap().hand_task(&mut tasks).await;
+                        }
+                        r.task = Some(tasks);
                     }
-                },
+                    if let Some(reqs) = prs.req {
+                        let (req, pfile, task) = if mware.is_some() {
+                            mware.as_ref().unwrap().hand_req(reqs).await
+                        } else {
+                            default_mw.unwrap().hand_req(reqs).await
+                        };
+                        r.req = req;
+                        if let Some(profile) = pfile {
+                            let mut pfiles = r.profile.unwrap_or(vec![]);
+                            pfiles.push(profile);
+                            r.profile = Some(pfiles);
+                        }
+                        if let Some(tsk) = task {
+                            let mut tasks = r.task.unwrap_or(vec![]);
+                            tasks.push(tsk);
+                            r.task = Some(tasks);
+                        }
+                    }
+                    r.yield_err = prs.yield_err;
+                }
                 Err(_) => {
                     // no entities comes in.
                     // leave None as default.
@@ -138,16 +161,28 @@ where
             return Ok(r);
         } else {
             log::error!("failed Response: {:?}", res);
-            let r = mware.hand_err(res);
+            let r = if mware.is_some() {
+                mware.as_ref().unwrap().hand_err(res).await
+            } else {
+                default_mw.unwrap().hand_err(res).await
+            };
             match r {
-                Some(r) => Ok(ParseResult {
-                    task: r.0,
-                    profile: r.1,
-                    req: r.2,
-                    entities: None,
-                    yield_err: r.3,
-                    low_mode: r.4,
-                }),
+                Some(r) => {
+                    let file = if let Some(file) = r.1 {
+                        Some(vec![file])
+                    } else {
+                        None
+                    };
+
+                    Ok(ParseResult {
+                        task: r.0,
+                        profile: file,
+                        req: r.2,
+                        entities: None,
+                        yield_err: r.3,
+                        low_mode: r.4,
+                    })
+                }
                 None => Err(ParseError {
                     desc: "Non-200s status code , not good".to_owned(),
                 }),
@@ -155,14 +190,13 @@ where
         }
     }
 
-    pub fn parse_all<E>(
-        apk: &mut App<E, T, P>,
+    pub async fn parse_all<E, C>(
+        apk: &'t mut App<E, T, P, C>,
         round: usize,
-        spd: &'static dyn Spider<E, T, P>,
-        mware: &dyn MiddleWare<E, T, P>,
-        gap: u64,
+        spd: &'static dyn Spider<E, T, P, C>,
     ) where
-        E: Serialize + std::fmt::Debug + Clone,
+        E: Serialize + std::fmt::Debug + Clone + Send,
+        C: Send,
     {
         let mut v = Vec::new();
         let len = apk.res.lock().unwrap().len();
@@ -170,11 +204,16 @@ where
             let t = apk.res.lock().unwrap().pop().unwrap();
             v.push(t);
         });
-        v.into_iter().for_each(|res| {
-            match Response::parse(res, spd, mware, gap) {
+        while let Some(res) = v.pop() {
+            let fut = if apk.middleware.is_some() {
+                Response::parse(res, spd, &apk.middleware, None)
+            } else {
+                Response::parse(res, spd, &None, Some(&apk.default_mw))
+            };
+            match fut.await {
                 Ok(d) => {
                     if let Some(da) = d.profile {
-                        apk.profile.lock().unwrap().push(da);
+                        apk.profile.lock().unwrap().extend(da);
                     }
                     if let Some(ta) = d.task {
                         apk.task_tmp.lock().unwrap().extend(ta);
@@ -204,37 +243,9 @@ where
                     log::error!("parse response failed.");
                 }
             }
-        });
+        }
     }
 }
-
-/*
- *impl<T, P> Drop for Response<T, P>
- *where
- *    T: Debug + Clone,
- *    P: Debug + Clone,
- *{
- *    fn drop(&mut self) {
- *        let status = self.status;
- *        if status >= 300 {
- *            error!(
- *                "status: {}, url: {}, msg: {} body: {:?}, cookie: {:?}",
- *                self.status,
- *                self.uri,
- *                self.msg.to_owned().unwrap(),
- *                self.body,
- *                self.cookie,
- *            );
- *        } else if status >= 200 {
- *            info!("status: {}, url: {}", self.status, self.uri);
- *        } else if status >= 100 {
- *            warn!("status: {}, url: {}", self.status, self.uri);
- *        } else {
- *            error!("status: {:?}, uri: {}, body: {:?}, cookie: {:?}, method: {}, created: {}, args: {:?}", self.status, self.uri, self.body, self.cookie, self.method, self.created, self.targs );
- *        }
- *    }
- *}
- */
 
 impl<T, P> Response<T, P>
 where
@@ -246,66 +257,14 @@ where
             Some(r) => r.clone(),
             None => Request::default(),
         };
-        let cookie = match r.cookie {
-            Some(c) => c,
-            None => std::collections::HashMap::new(),
-        };
-        let body = match r.body {
-            Some(c) => c,
-            None => std::collections::HashMap::new(),
-        };
-        let headers = match r.headers {
-            Some(c) => c,
-            None => std::collections::HashMap::new(),
-        };
         Response {
-            uri: r.uri,
-            method: r.method,
-            cookie: cookie,
-            created: r.created,
-            parser: r.parser,
-            targs: r.targs,
+            task: r.task,
+            profile: r.profile,
             msg: None,
-            body: body,
             content: None,
-            headers: headers,
-            pheaders: r.pheaders,
-            theaders: r.theaders,
+            headers: std::collections::HashMap::new(),
             status: 0,
             trys: 0,
-            pargs: r.pargs,
         }
-    }
-
-    pub fn into1(&self, gap: u64) -> Option<(Task<T>, Profile<P>)>
-    where
-        T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
-        P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
-    {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-        let pheaders = self.pheaders.clone();
-        let theaders = self.theaders.clone();
-        let profile = Profile {
-            cookie: Some(self.cookie.clone()),
-            headers: Some(pheaders),
-            able: now + gap,
-            created: self.created,
-            pargs: self.pargs.clone(),
-        };
-        let task = Task {
-            uri: self.uri.clone(),
-            method: self.method.clone(),
-            body: Some(self.body.clone()),
-            headers: Some(theaders),
-            able: now + gap,
-            trys: self.trys,
-            parser: self.parser.clone(),
-            targs: self.targs.clone(),
-        };
-        debug!("convert a response to task and profile.");
-        return Some((task, profile));
     }
 }
