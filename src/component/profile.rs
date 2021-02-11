@@ -5,58 +5,41 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 
-use crate::component::{utils, Client, Request, ResError, Response, Task, UserAgent};
+use crate::component::{utils, Client, Request, ResError, Response};
 use futures::future::join_all;
+use futures::future::LocalBoxFuture;
 use log::{error, info};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::io::Write;
 use std::sync::{Arc, Mutex};
 
-//type Sitem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
-
+/// Infomation represented to the server, generally, it provide extra, meta data about users and users' devices, required by server, basically, includes `User-Agent`, `Accept-Encoding` and so on. For the purposes of extension, customized generic parameter `P` is required.
 #[derive(Debug, Clone, Deserialize, Serialize)]
-#[serde(bound = "PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
-pub struct Profile<PArgs>
+#[serde(bound = "P: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
+pub struct Profile<P>
 where
-    PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
+    /// represents a heahers
     pub headers: HashMap<String, String>,
+    /// cookie set by server or user
     pub cookie: HashMap<String, String>,
+    /// checkpoint by which this `Profile` is valid for `Request`
     pub able: u64,
+    /// meta data that the `Profile` is created
     pub created: u64,
-    pub pargs: Option<PArgs>,
+    /// additional arguments for extensive application
+    pub pargs: Option<P>,
 }
 unsafe impl<P> Send for Profile<P> where P: Serialize + for<'a> Deserialize<'a> + Debug + Clone {}
-
-/*
- *the structure buffer that customize your needs
- *#[derive(Debug, Clone, Deserialize, Serialize)]
- *pub struct PArgs {
- *    pub typ: ProfileType,
- *    pub inteval: Interval,
- *    pub expire: u64,
- *}
- *
- *#[derive(Debug, Clone, Deserialize, Serialize)]
- *pub enum Interval {
- *    Light,
- *    Middle,
- *    Night,
- *}
- *
- *#[derive(Debug, Clone, Deserialize, Serialize)]
- *pub enum ProfileType {
- *    Web,
- *    Mobile,
- *}
- */
 
 impl<P> Profile<P>
 where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
+    /// default method used to extract `Profile` from a `Response`, collecting all cookie by
+    /// `set-cookie` and ignoring others.
     pub fn exec<T>(res: &mut Response<T, P>) -> Result<Profile<P>, ResError>
     where
         T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
@@ -71,12 +54,19 @@ where
         Ok(res.profile.clone())
     }
 
+    /// generate multiple `Profile` and put them into `App`
+    /// for different uri, different generator functions are required.
     pub async fn exec_all<'a, E, T>(
-        //f: Option<&'a (dyn Fn(Response<T, P>) -> Sitem<ParseResult<E, T, P>> + Send + Sync)>,
         profiles: Arc<Mutex<Vec<Profile<P>>>>,
-        uri: &str,
         num: usize,
-        uas: Arc<Vec<UserAgent>>,
+        f: (
+            Request<T, P>,
+            Option<
+                &(dyn Fn(&mut Response<T, P>) -> LocalBoxFuture<'_, Result<Profile<P>, ResError>>
+                      + Send
+                      + Sync),
+            >,
+        ),
     ) where
         T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
         P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
@@ -84,22 +74,15 @@ where
     {
         let mut rs = vec![];
         let mut vreq = Vec::new();
-        vec![0; num].iter().for_each(|_| {
-            // select a ua
-            let len = uas.len();
-            let ind = rand::thread_rng().gen_range(0, len - 1);
-            let ua = uas[ind].clone().user_agent;
+        for _ in 0..num {
             // construct a new reqeust
-            let mut req = Request::<T, P>::default();
-            req.task.uri = uri.clone().to_string();
-            req.profile.headers.insert("user-agent".to_string(), ua);
-            let p = Response::default(Some(&req));
+            let p = Response::default(Some(&f.0));
             rs.push(p);
-            if let Some(t) = req.init() {
+            if let Some(t) = f.0.clone().init() {
                 log::trace!("Request that to generate Profile: {:?}", t);
                 vreq.push(Client::exec(t, Some(false)));
             }
-        });
+        }
         // poll all request concurrently
         let vres = join_all(vreq).await;
         let mut i = 0usize;
@@ -110,19 +93,6 @@ where
                     p.headers.extend(res.1);
                     p.status = res.2;
                     let profile = Some(Profile::exec(&mut p).unwrap());
-                    /*
-                     *let profile = match f {
-                     *    None => Some(),
-                     *    Some(func) => {
-                     *        if let Elements::Pfile(mut result) = func(Elements::Res(p)).unwrap() {
-                     *            result.able += gap;
-                     *            Some(result)
-                     *        } else {
-                     *            None
-                     *        }
-                     *    }
-                     *};
-                     */
                     log::trace!("gen profile: {:?}", profile);
                     profiles.lock().unwrap().extend(profile);
                     i += 1;
@@ -142,6 +112,7 @@ impl<P> Profile<P>
 where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
+    /// store unfinished or extra `Profile`s,
     pub fn stored(path: &str, profiles: &Arc<Mutex<Vec<Profile<P>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
@@ -157,6 +128,7 @@ where
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
+    /// load unfinished or extra `Profile`s  
     pub fn load(path: &str) -> Option<Vec<Profile<P>>> {
         let file = fs::OpenOptions::new()
             .read(true)
@@ -173,22 +145,6 @@ where
             })
             .collect::<Vec<Profile<P>>>();
         return Some(data);
-    }
-
-    /// recycle Profile from Request
-    pub fn recycle<T>(path: &str) -> (Vec<Profile<P>>, Vec<Task<T>>)
-    where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    {
-        let mut tasks = Vec::new();
-        let mut profiles = Vec::new();
-        if let Some(reqs) = Request::<T, P>::load(path) {
-            reqs.into_iter().for_each(|req| {
-                tasks.push(req.task);
-                profiles.push(req.profile);
-            });
-        }
-        (profiles, tasks)
     }
 }
 

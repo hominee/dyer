@@ -9,27 +9,37 @@ use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
+/// `Task`, as it means, a scheduled job to be done, contains most infomation of `Request`. For the  purposes of extensive compatibility,
+/// A generic parameter `T` is required in dealing with it.
 #[derive(Deserialize, Debug, Clone, Serialize)]
-#[serde(bound = "TArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
-pub struct Task<TArgs>
+#[serde(bound = "T: Serialize + for<'a> Deserialize<'a> + Debug + Clone")]
+pub struct Task<T>
 where
-    TArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     pub uri: String,
     pub method: String,
+    /// additional headers if necessary
     pub headers: HashMap<String, String>,
+    /// Formdata or other request parameter stored here
     pub body: Option<HashMap<String, String>>,
+    /// checkpoint in seconds by which this `Task` is allowed to be executed
     pub able: u64,
+    // FIXME add an member to AppArg
+    /// times that this `Task` has failed, by default, the threshold is 2, customize it in `AppArg`
     pub trys: u8,
+    /// the index to get the parser parsing the `Response` when it's done
     pub parser: String,
-    pub targs: Option<TArgs>,
+    /// additional arguments for extensive application
+    pub targs: Option<T>,
 }
 
 impl<T> Task<T>
 where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub fn stored(path: &str, task: &mut Arc<Mutex<Vec<Task<T>>>>) {
+    /// store unfinished or extra `Task`s,
+    pub fn stored(path: &str, task: &Arc<Mutex<Vec<Task<T>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -44,6 +54,7 @@ where
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
+    /// load unfinished or extra `Task`s  
     pub fn load(path: &str) -> Option<Vec<Task<T>>> {
         // load Profile here
         let file = fs::OpenOptions::new()

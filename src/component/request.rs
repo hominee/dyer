@@ -16,26 +16,25 @@ use std::io::{BufRead, BufReader};
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
+/// Generally, `Profile` and `Task` roughly add up to a `Request`,  
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(
-    bound = "TArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone, PArgs: Serialize + for<'a> Deserialize<'a> + Debug + Clone"
+    bound = "T: Serialize + for<'a> Deserialize<'a> + Debug + Clone, P: Serialize + for<'a> Deserialize<'a> + Debug + Clone"
 )]
-pub struct Request<TArgs, PArgs>
+pub struct Request<T, P>
 where
-    TArgs: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    PArgs: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
-    pub task: Task<TArgs>,
-    pub profile: Profile<PArgs>,
+    pub task: Task<T>,
+    pub profile: Profile<P>,
     pub able: u64,
-    pub trys: u8,
-    pub created: u64,
     pub headers: Option<std::collections::HashMap<String, String>>,
 }
-unsafe impl<TArgs, PArgs> Send for Request<TArgs, PArgs>
+unsafe impl<T, P> Send for Request<T, P>
 where
-    TArgs: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    PArgs: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
 }
 
@@ -94,6 +93,7 @@ where
     T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
     P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
 {
+    /// transform a `Request` into `hyper::Request`
     pub fn init(self) -> Option<hRequest<hBody>> {
         let mut builder = hRequest::builder();
         // initialize headers
@@ -175,8 +175,6 @@ where
             profile: Profile::default(),
             headers: None,
             able: now,
-            trys: 0,
-            created: now,
         }
     }
 }
@@ -186,7 +184,8 @@ where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub fn stored(path: &str, reqs: &mut Arc<Mutex<Vec<Request<T, P>>>>) {
+    /// store unfinished or extra `Request`s,
+    pub fn stored(path: &str, reqs: &Arc<Mutex<Vec<Request<T, P>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -201,6 +200,7 @@ where
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
+    /// load unfinished or extra `Request`s,
     pub fn load(path: &str) -> Option<Vec<Request<T, P>>> {
         // load Profile here
         let file = fs::OpenOptions::new()
@@ -226,6 +226,7 @@ where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
+    /// construct `Request` from `Profile`
     pub fn from_profile(&mut self, profile: Profile<P>) {
         if self.able < profile.able {
             self.able = profile.able;
@@ -233,6 +234,7 @@ where
         self.profile = profile;
     }
 
+    /// construct `Request` from `Task`
     pub fn from_task(&mut self, task: Task<T>) {
         if self.able < task.able {
             self.able = task.able;

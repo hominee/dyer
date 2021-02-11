@@ -5,9 +5,9 @@ extern crate serde_json;
 extern crate signal_hook;
 extern crate tokio;
 
-use crate::component::{Client, Profile, Request, Response, Task, UserAgent};
-use crate::macros::Spider;
-use crate::macros::{MiddleWare, MiddleWareDefault, Pipeline, PipelineDefault};
+use crate::component::{Client, Profile, Request, Response, Task};
+use crate::plugin::Spider;
+use crate::plugin::{MiddleWare, PipeLine};
 use futures::future::join_all;
 use log::info;
 use rand::prelude::Rng;
@@ -19,23 +19,39 @@ use std::sync::{
 };
 use tokio::task;
 
-/// number that once for a concurrent future poll
+/// Arguments that control the `App` at runtime, including using history or not,  
+/// `Task` `Profile` `Request` `Response` `Entity` consuming and generating
+/// There shall be an introduction to every member(maybe coming soon).
 pub struct AppArg {
-    pub gap: u64,               // time tap added to created Tasks or Profiles
-    pub join_gap: u64,          // gap to forcefully join the spawned task
-    pub round_req: usize,       // consume req one time
-    pub round_req_min: usize,   // cache request minimal length
-    pub round_req_max: usize,   // cache request maximal length
-    pub buf_task_tmp: usize,    // buffer length for the created task.
-    pub round_task: usize,      // construct req from task one time
-    pub round_task_min: usize,  // minimal task(profile) consumed per round
-    pub round_res: usize,       // consume response once upon a time
-    pub profile_min: usize,     // minimal profile number
-    pub profile_max: usize,     // maximal profile number
-    pub round_yield_err: usize, //consume yield_err once upon a time
-    pub round_result: usize,    //consume Entity once upon a time
+    /// time tap added to created Tasks or Profiles
+    pub gap: u64,
+    /// gap to forcefully join the spawned task
+    pub join_gap: u64,
+    /// number that once for a concurrent future poll
+    pub round_req: usize,
+    /// cache request minimal length
+    pub round_req_min: usize,
+    /// cache request maximal length
+    pub round_req_max: usize,
+    /// buffer length for the created task.
+    pub buf_task_tmp: usize,
+    /// construct req from task one time
+    pub round_task: usize,
+    /// minimal task(profile) consumed per round
+    pub round_task_min: usize,
+    /// consume response once upon a time
+    pub round_res: usize,
+    /// minimal profile number
+    pub profile_min: usize,
+    /// maximal profile number
+    pub profile_max: usize,
+    ///consume yield_err once upon a time
+    pub round_yield_err: usize,
+    ///consume Entity once upon a time
+    pub round_result: usize,
     pub skip_history: bool,
-    pub rate: Rate, // control the task speed runtime
+    /// control the task speed runtime
+    pub rate: Rate,
 }
 
 impl Default for AppArg {
@@ -60,6 +76,7 @@ impl Default for AppArg {
     }
 }
 
+/// some infomation about `dyer` at rumtime where speed and error-handler based on
 #[derive(std::fmt::Debug)]
 pub struct Rate {
     pub alltime: f64,
@@ -154,6 +171,7 @@ impl Rate {
         }
     }
 
+    /// backup the `Task` `Profile` `Request` for some time in case of interupt
     pub fn backup(&mut self) -> bool {
         if self.alltime >= 600.0 {
             self.alltime = 0.0;
@@ -162,6 +180,7 @@ impl Rate {
         false
     }
 
+    /// decide the length of `Task` to be spawned
     pub fn get_len(&mut self, tm: Option<u64>) -> usize {
         let now = match tm {
             Some(now) => now as f64,
@@ -206,13 +225,12 @@ impl Rate {
     }
 }
 
-pub struct App<Entity, T, P, C>
+/// An abstraction and collection of data flow of `Dyer`,  
+pub struct App<Entity, T, P>
 where
     T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    C: Send,
 {
-    pub uas: Arc<Vec<UserAgent>>,
     pub task: Arc<Mutex<Vec<Task<T>>>>,
     pub task_tmp: Arc<Mutex<Vec<Task<T>>>>,
     pub profile: Arc<Mutex<Vec<Profile<P>>>>,
@@ -224,28 +242,16 @@ where
     pub fut_res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
     pub fut_profile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
     pub rt_args: Arc<Mutex<AppArg>>,
-
-    pub pipeline: Option<Box<dyn Pipeline<Entity, C>>>,
-    pub default_pl: PipelineDefault<Entity, std::fs::File>,
-    pub middleware: Option<Box<dyn MiddleWare<Entity, T, P, C>>>,
-    pub default_mw: MiddleWareDefault<Entity, T, P, C>,
 }
 
-impl<'a, Entity, T, P, C> App<Entity, T, P, C>
+impl<'a, Entity, T, P> App<Entity, T, P>
 where
     T: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
     P: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
     Entity: Serialize + std::fmt::Debug + Clone + Send + Sync,
-    C: Send,
 {
-    pub fn new(
-        pline: Option<Box<dyn Pipeline<Entity, C>>>,
-        mware: Option<Box<dyn MiddleWare<Entity, T, P, C>>>,
-    ) -> Self {
-        let default_pl = PipelineDefault::<Entity, std::fs::File>::new();
-        let default_mw = MiddleWareDefault::<Entity, T, P, C>::new();
+    pub fn new() -> Self {
         App {
-            uas: Arc::new(Vec::new()),
             task: Arc::new(Mutex::new(Vec::new())),
             task_tmp: Arc::new(Mutex::new(Vec::new())),
             profile: Arc::new(Mutex::new(Vec::new())),
@@ -257,19 +263,12 @@ where
             fut_res: Arc::new(Mutex::new(Vec::new())),
             fut_profile: Arc::new(Mutex::new(Vec::new())),
             rt_args: Arc::new(Mutex::new(AppArg::default())),
-            pipeline: pline,
-            default_pl: default_pl,
-            middleware: mware,
-            default_mw: default_mw,
         }
     }
 
-    pub fn info(&self) {
+    /// get the overview of `App`
+    pub fn info(&mut self) {
         let mut vs = Vec::new();
-        let len_uas = self.uas.len();
-        if len_uas != 0 {
-            vs.push(format!("{} UserAgent", len_uas));
-        }
         let len_task = self.task.lock().unwrap().len();
         if len_task != 0 {
             vs.push(format!("{} Task", len_task));
@@ -310,9 +309,10 @@ where
         if len_fut_profile != 0 {
             vs.push(format!("{} Future Profile", len_fut_profile));
         }
-        info!("{}", vs.join("\n"));
+        log::info!("{}", vs.join("\n"));
     }
 
+    /// to see whether to generate `Profile`
     pub fn enough_profile(&self) -> bool {
         let mut rng = rand::thread_rng();
         let profile_len = self.profile.lock().unwrap().len()
@@ -330,22 +330,18 @@ where
         (less || exceed) && fut_exceed || emer
     }
 
-    pub async fn plineout(&mut self) {
+    /// drive and consume extracted Entity into `PipeLine`
+    pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, Entity, C>)
+    where
+        C: Send + 'a,
+    {
         if self.yield_err.lock().unwrap().len() > self.rt_args.lock().unwrap().round_yield_err {
-            info!("pipeline put out yield_parse_err");
-            if let Some(pl) = &self.pipeline {
-                pl.process_yielderr(&mut self.yield_err).await;
-            } else {
-                self.default_pl.process_yielderr(&mut self.yield_err).await;
-            }
+            log::debug!("pipeline put out yield_parse_err");
+            (pipeline.process_yerr)(&mut self.yield_err).await;
         }
         if self.result.lock().unwrap().len() > self.rt_args.lock().unwrap().round_result {
-            info!("pipeline put out Entity");
-            if let Some(pl) = &self.pipeline {
-                pl.process_item(&mut self.result).await;
-            } else {
-                self.default_pl.process_yielderr(&mut self.yield_err).await;
-            }
+            log::debug!("pipeline put out Entity");
+            (pipeline.process_item)(&mut self.result).await;
         }
         if self.task_tmp.lock().unwrap().len() >= self.rt_args.lock().unwrap().buf_task_tmp {
             log::info!("pipeline out buffered task.");
@@ -356,54 +352,41 @@ where
         }
     }
 
-    pub async fn update_req(&mut self) {
+    /// load and balance `Request`
+    pub async fn update_req(&mut self, middleware: &MiddleWare<'a, Entity, T, P>) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let len_req_tmp = self.req_tmp.lock().unwrap().len();
         if len_req_tmp <= self.rt_args.lock().unwrap().round_req_min {
-            info!("req_tmp does not contains enough Reqeust, take them from self.req");
+            log::info!("req_tmp does not contains enough Reqeust, take them from self.req");
             // cached request is not enough
             let len_req = self.req.lock().unwrap().len();
             let mut buf_req = Vec::new();
-            let mut buf_task = Vec::new();
-            let mut buf_pfile = Vec::new();
+            let mut requests = Vec::new();
+
+            //  limit len_req and reqs that is availible by now
             for _ in 0..len_req {
                 let request = self.req.lock().unwrap().remove(0);
-                let (req, pfile, tsk) = if self.middleware.is_some() {
-                    self.middleware.as_ref().unwrap().hand_req(request).await
+                if request.able <= now {
+                    requests.push(request);
                 } else {
-                    self.default_mw.hand_req(request).await
-                };
-                if let Some(profile) = pfile {
-                    buf_pfile.push(profile);
-                }
-                if let Some(task) = tsk {
-                    buf_task.push(task);
-                }
-                if let Some(request) = req {
-                    if request.able <= now {
-                        // put the request into cbase_req_tmp
-                        buf_req.push(request);
-                    } else {
-                        log::debug!("reach the unavailible request, stop.");
-                        self.req.lock().unwrap().insert(0, request);
-                        break;
-                    }
-                }
-                if len_req_tmp + buf_req.len() > self.rt_args.lock().unwrap().round_req_max {
-                    log::debug!("take full of Request from self.req");
+                    self.req.lock().unwrap().insert(0, request);
                     break;
                 }
             }
+            let (buf_task, buf_pfile) =
+                (middleware.hand_req)(&mut requests, self.rt_args.clone()).await;
+            buf_req.extend(requests);
             self.req_tmp.lock().unwrap().extend(buf_req);
             self.task.lock().unwrap().extend(buf_task);
             self.profile.lock().unwrap().extend(buf_pfile);
         }
     }
 
-    pub async fn spawn_task(&'a mut self) {
+    /// spawn polling `Request` as `tokio::task` and executing asynchronously,
+    pub async fn spawn_task(&mut self) {
         if self.fut_res.lock().unwrap().len() > 20 {
             log::warn!("enough Future Response, spawn no task.");
         } else {
@@ -436,6 +419,7 @@ where
         }
     }
 
+    /// load cached `Task` from caced directory
     pub fn buf_task(&self, path: &str) -> Vec<usize> {
         let mut vfiles = std::fs::read_dir(path)
             .unwrap()
@@ -452,26 +436,33 @@ where
         vfiles
     }
 
-    pub async fn close(&'a mut self, spd: &'static dyn Spider<Entity, T, P, C>) {
-        Response::parse_all(self, usize::MAX, spd).await;
+    /// preparation before closing `Dyer`
+    pub async fn close<'b, C>(
+        &'a mut self,
+        spd: &'static dyn Spider<Entity, T, P>,
+        middleware: &'a MiddleWare<'b, Entity, T, P>,
+        pipeline: &'a PipeLine<'b, Entity, C>,
+    ) where
+        C: Send + 'b,
+    {
+        Response::parse_all(self, usize::MAX, spd, middleware).await;
         info!("sending all of them into Pipeline");
-        if let Some(pl) = &self.pipeline {
-            pl.process_yielderr(&mut self.yield_err).await;
-            pl.process_item(&mut self.result).await;
-            pl.close_pipeline().await;
-        } else {
-            self.default_pl.process_item(&mut self.result).await;
-            self.default_pl.process_yielderr(&mut self.yield_err).await;
-            self.default_pl.close_pipeline().await;
-        }
-
+        (pipeline.process_yerr)(&mut self.yield_err).await;
+        (pipeline.process_item)(&mut self.result).await;
+        (pipeline.close_pipeline)().await;
         log::info!("All work is Done. exit gracefully");
     }
 
-    pub async fn run(
+    /// drive `Dyer` into running.
+    pub async fn run<C>(
         &'a mut self,
-        spd: &'static dyn Spider<Entity, T, P, C>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        spd: &'static dyn Spider<Entity, T, P>,
+        middleware: &'static MiddleWare<'a, Entity, T, P>,
+        pipeline: PipeLine<'_, Entity, C>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+    where
+        C: Send + 'a,
+    {
         // signal handling initial
         let term = Arc::new(AtomicUsize::new(0));
         const SIGINT: usize = signal_hook::SIGINT as usize;
@@ -481,10 +472,7 @@ where
         //skip the history and start new fields to staart with, some Profile required
         if self.rt_args.lock().unwrap().skip_history {
             log::warn!("skipped the history.");
-            let uri = spd.entry_profile().unwrap();
-            let uas = self.uas.clone();
-            //let gap = self.rt_args.lock().unwrap().gap;
-            Profile::exec_all::<Entity, T>(self.profile.clone(), uri, 3usize, uas).await;
+            Profile::exec_all::<Entity, T>(self.profile.clone(), 3usize, spd.entry_profile()).await;
             let tasks = spd.entry_task().unwrap();
             self.task.lock().unwrap().extend(tasks);
         } else {
@@ -538,10 +526,9 @@ where
                         info!("join 7 future response ");
                     }
                     info!("join all future response to be executed");
-                    self.info();
 
                     // dispath them
-                    self.close(spd).await;
+                    self.close(spd, middleware, &pipeline).await;
                     info!("executing close_spider...");
                     spd.close_spider(self);
                     break;
@@ -558,7 +545,7 @@ where
                         && self.res.lock().unwrap().is_empty()
                     {
                         info!("all work is done.");
-                        self.close(spd).await;
+                        self.close(spd, middleware, &pipeline).await;
                         info!("executing close_spider...");
                         spd.close_spider(self);
                         break;
@@ -566,7 +553,7 @@ where
 
                     // consume valid request in cbase_reqs_tmp
                     // if not enough take them from self.req
-                    self.update_req().await;
+                    self.update_req(middleware).await;
 
                     //take req out to finish
                     self.spawn_task().await;
@@ -574,14 +561,11 @@ where
                     // before we construct request check profile first
                     if self.enough_profile() {
                         info!("profile length too few or not exceeding max, generate Profile");
-                        let uas = self.uas.clone();
-                        let uri = spd.entry_profile().unwrap();
                         let pfile = self.profile.clone();
-                        //let f = spd.get_parser(MethodIndex::GenProfile);
-                        //let gap = self.rt_args.lock().unwrap().gap;
                         info!("spawn {} tokio task to generate Profile concurrently", 3);
+                        let f = spd.entry_profile().clone();
                         let johp = task::spawn(async move {
-                            Profile::exec_all::<Entity, T>(pfile, uri, 3usize, uas).await;
+                            Profile::exec_all::<Entity, T>(pfile, 3usize, f).await;
                         });
                         self.fut_profile.lock().unwrap().push((now, johp));
                     }
@@ -600,10 +584,10 @@ where
                     //extract the parseResult
                     info!("parsing Response ...");
                     let round_res = self.rt_args.lock().unwrap().round_res;
-                    Response::parse_all(self, round_res, spd).await;
+                    Response::parse_all(self, round_res, spd, middleware).await;
 
                     //pipeline put out yield_parse_err and Entity
-                    self.plineout().await;
+                    self.plineout(&pipeline).await;
 
                     // if task is running out, load them from nex buf_task
                     if self.task.lock().unwrap().is_empty() {
@@ -649,17 +633,17 @@ where
                     Client::watch(self.fut_res.clone(), self.fut_profile.clone(), join_gap).await;
                     self.rt_args.lock().unwrap().rate.update();
                     if self.rt_args.lock().unwrap().rate.backup() {
-                        self.close(spd).await;
+                        self.close(spd, middleware, &pipeline).await;
 
                         log::info!("backup history...");
                         Profile::stored("../data/profile", &self.profile);
-                        Task::stored("../data/task", &mut self.task);
-                        Task::stored("../data/task_tmp", &mut self.task_tmp);
-                        Request::stored("../data/request", &mut self.req);
-                        Request::stored("../data/request_tmp", &mut self.req_tmp);
+                        Task::stored("../data/task", &self.task);
+                        Task::stored("../data/task_tmp", &self.task_tmp);
+                        Request::stored("../data/request", &self.req);
+                        Request::stored("../data/request_tmp", &self.req_tmp);
                     }
-                    self.info();
-                    std::thread::sleep(std::time::Duration::from_millis(150));
+                    //self.info();
+                    //std::thread::sleep(std::time::Duration::from_millis(150));
                 }
 
                 _ => unreachable!(),

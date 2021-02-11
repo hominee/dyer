@@ -4,25 +4,30 @@ extern crate hyper;
 extern crate hyper_tls;
 
 use crate::component::{ParseError, Profile, Request, Task};
-use crate::engine::App;
-use crate::macros::{MiddleWare, MiddleWareDefault, Spider};
-use log::{debug, error, info};
+use crate::engine::{App, AppArg};
+use crate::plugin::{MiddleWare, Spider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::sync::{Arc, Mutex};
 
+/// the parsed result returned by `parser`.
 pub struct ParseResult<E, T, P>
 where
     T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
     P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
     E: Serialize + std::fmt::Debug + Clone,
 {
-    pub req: Option<Request<T, P>>,
-    pub task: Option<Vec<Task<T>>>,
-    pub profile: Option<Vec<Profile<P>>>,
-    pub entities: Option<Vec<E>>,
-    pub yield_err: Option<String>,
-    pub low_mode: bool,
+    /// a vector of `Request`
+    pub req: Vec<Request<T, P>>,
+    /// a vector of `Task`
+    pub task: Vec<Task<T>>,
+    /// a vector of `Profile`
+    pub profile: Vec<Profile<P>>,
+    /// a vector of customized `Entity`
+    pub entities: Vec<E>,
+    /// a vector of record for failed `Response`, for the use of debug.
+    pub yield_err: Vec<String>,
 }
 unsafe impl<E, T, P> Sync for ParseResult<E, T, P>
 where
@@ -39,18 +44,26 @@ where
 {
 }
 
+/// The result of a `Resquest`, returned by `Client`, contains `Task` and `Profile` which consist
+/// of,
 #[derive(Clone, Debug)]
 pub struct Response<T, P>
 where
     T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
     P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
+    /// `Task` that make this `Response`
     pub task: Task<T>,
+    /// `Profile` that make this `Response`
     pub profile: Profile<P>,
+    /// status code returned by the server
     pub status: usize,
-    pub trys: u8,
+    /// the content of this `Request`
     pub content: Option<String>,
+    /// the headers of this `Response`, note that `HeaderName` such as `set-cookie` appears
+    /// multiple times, is joined with `::`
     pub headers: HashMap<String, String>,
+    /// error message returned by server or `dyner` if `Request` goes wrong
     pub msg: Option<String>,
 }
 unsafe impl<T, P> Sync for Response<T, P>
@@ -71,168 +84,107 @@ where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone + Send,
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
-    pub async fn parse<E, C>(
-        mut res: Response<T, P>,
-        spd: &'static dyn Spider<E, T, P, C>,
-        mware: &'t Option<Box<dyn MiddleWare<E, T, P, C>>>,
-        default_mw: Option<&'t MiddleWareDefault<E, T, P, C>>,
+    /// specifically, dispose a `Response`, handle failed or corrupt `Response`, and return `ParseResult` or `ParseError`.
+    pub async fn parse<'b, E>(
+        res: Response<T, P>,
+        spd: &'static dyn Spider<E, T, P>,
+        mware: &'t MiddleWare<'b, E, T, P>,
+        arg: Arc<Mutex<AppArg>>,
     ) -> Result<ParseResult<E, T, P>, ParseError>
     where
         E: Serialize + std::fmt::Debug + Clone + Send,
-        C: Send,
     {
         //dispath handlers dependent on their status code
         let status = res.status;
         if status <= 299 && status >= 200 {
-            debug!("successful Response: uri: {}", &res.task.uri[0..77]);
+            log::debug!(
+                "recycle profile, successful Response: uri: {}",
+                &res.task.uri[0..77]
+            );
             // status code between 200 - 299
-            if mware.is_some() {
-                mware.as_ref().unwrap().hand_res(&mut res).await;
-            } else {
-                default_mw.unwrap().hand_res(&mut res).await;
-            }
-            if mware.is_some() {
-                mware.as_ref().unwrap().hand_profile(&mut res.profile).await;
-            } else {
-                default_mw.unwrap().hand_profile(&mut res.profile).await;
-            }
-            info!("recycle profile");
-            let mut r = ParseResult {
-                req: None,
-                task: None,
-                profile: Some(vec![res.profile.clone()]),
-                entities: None,
-                yield_err: None,
-                low_mode: false,
-            };
             let content = res.content.clone().unwrap();
             let uri = res.task.uri.clone();
+            let pfile = res.profile.clone();
             let ind = (&res.task.parser).to_string();
             let parser = spd
                 .get_parser(ind)
                 .expect(&format!("parser {} not found.", &res.task.parser));
             let data = (parser)(res);
             match data {
-                Ok(prs) => {
-                    if let Some(mut items) = prs.entities {
-                        if mware.is_some() {
-                            mware.as_ref().unwrap().hand_item(&mut items).await;
-                        } else {
-                            default_mw.unwrap().hand_item(&mut items).await;
-                        }
-                        r.entities = Some(items);
-                    }
-                    if let Some(mut tasks) = prs.task {
-                        if mware.is_some() {
-                            mware.as_ref().unwrap().hand_task(&mut tasks).await;
-                        } else {
-                            default_mw.unwrap().hand_task(&mut tasks).await;
-                        }
-                        r.task = Some(tasks);
-                    }
-                    if let Some(reqs) = prs.req {
-                        let (req, pfile, task) = if mware.is_some() {
-                            mware.as_ref().unwrap().hand_req(reqs).await
-                        } else {
-                            default_mw.unwrap().hand_req(reqs).await
-                        };
-                        r.req = req;
-                        if let Some(profile) = pfile {
-                            let mut pfiles = r.profile.unwrap_or(vec![]);
-                            pfiles.push(profile);
-                            r.profile = Some(pfiles);
-                        }
-                        if let Some(tsk) = task {
-                            let mut tasks = r.task.unwrap_or(vec![]);
-                            tasks.push(tsk);
-                            r.task = Some(tasks);
-                        }
-                    }
-                    r.yield_err = prs.yield_err;
-                }
+                Ok(prs) => Ok(prs),
                 Err(_) => {
                     // no entities comes in.
                     // leave None as default.
-                    error!("cannot parse Response");
+                    log::error!("cannot parse Response");
+                    let mut r = ParseResult {
+                        req: vec![],
+                        task: vec![],
+                        profile: vec![pfile],
+                        entities: vec![],
+                        yield_err: vec![],
+                    };
                     let s = format!("{}\n{}", uri, content);
-                    r.yield_err = Some(s);
+                    r.yield_err.push(s);
+                    Ok(r)
                 }
             }
-            return Ok(r);
         } else {
             log::error!("failed Response: {:?}", res);
-            let r = if mware.is_some() {
-                mware.as_ref().unwrap().hand_err(res).await
-            } else {
-                default_mw.unwrap().hand_err(res).await
-            };
-            match r {
-                Some(r) => {
-                    let file = if let Some(file) = r.1 {
-                        Some(vec![file])
-                    } else {
-                        None
-                    };
-
-                    Ok(ParseResult {
-                        task: r.0,
-                        profile: file,
-                        req: r.2,
-                        entities: None,
-                        yield_err: r.3,
-                        low_mode: r.4,
-                    })
-                }
-                None => Err(ParseError {
-                    desc: "Non-200s status code , not good".to_owned(),
-                }),
-            }
+            let r = (mware.hand_err)(&mut vec![res], arg).await;
+            Ok(ParseResult {
+                task: r.0,
+                profile: r.1,
+                req: r.2,
+                entities: vec![],
+                yield_err: r.3,
+            })
         }
     }
 
-    pub async fn parse_all<E, C>(
-        apk: &'t mut App<E, T, P, C>,
+    /// parse multiple `Response` in `App`, then drive all `ParseResult` into `MiddleWare`
+    pub async fn parse_all<'b, E>(
+        app: &'t mut App<E, T, P>,
         round: usize,
-        spd: &'static dyn Spider<E, T, P, C>,
+        spd: &'static dyn Spider<E, T, P>,
+        mware: &'t MiddleWare<'b, E, T, P>,
     ) where
         E: Serialize + std::fmt::Debug + Clone + Send,
-        C: Send,
     {
         let mut v = Vec::new();
-        let len = apk.res.lock().unwrap().len();
+        let len = app.res.lock().unwrap().len();
         vec![0; len.min(round)].iter().for_each(|_| {
-            let t = apk.res.lock().unwrap().pop().unwrap();
+            let t = app.res.lock().unwrap().remove(0);
             v.push(t);
         });
+        (mware.hand_res)(&mut v, app.rt_args.clone()).await;
         while let Some(res) = v.pop() {
-            let fut = if apk.middleware.is_some() {
-                Response::parse(res, spd, &apk.middleware, None)
-            } else {
-                Response::parse(res, spd, &None, Some(&apk.default_mw))
-            };
+            let fut = Response::parse(res, spd, &mware, app.rt_args.clone());
             match fut.await {
-                Ok(d) => {
-                    if let Some(da) = d.profile {
-                        apk.profile.lock().unwrap().extend(da);
+                Ok(mut prs) => {
+                    if !prs.req.is_empty() {
+                        let (task, pfile) =
+                            (mware.hand_req)(&mut prs.req, app.rt_args.clone()).await;
+                        prs.profile.extend(pfile);
+                        prs.task.extend(task);
+                        app.req.lock().unwrap().extend(prs.req);
                     }
-                    if let Some(ta) = d.task {
-                        apk.task_tmp.lock().unwrap().extend(ta);
+                    if !prs.profile.is_empty() {
+                        (mware.hand_profile)(&mut prs.profile, app.rt_args.clone()).await;
+                        app.profile.lock().unwrap().extend(prs.profile);
                     }
-                    if let Some(re) = d.req {
-                        apk.req.lock().unwrap().push(re);
+                    if !prs.task.is_empty() {
+                        (mware.hand_task)(&mut prs.task, app.rt_args.clone()).await;
+                        app.task_tmp.lock().unwrap().extend(prs.task);
                     }
-                    if let Some(err) = d.yield_err {
-                        apk.yield_err.lock().unwrap().push(err);
+                    if !prs.entities.is_empty() {
+                        (mware.hand_item)(&mut prs.entities, app.rt_args.clone()).await;
+                        app.result.lock().unwrap().extend(prs.entities);
                     }
-                    if let Some(en) = d.entities {
-                        // pipeline out put the entities
-                        apk.result.lock().unwrap().extend(en.into_iter());
-                    }
-                    let mut rate = &mut apk.rt_args.lock().unwrap().rate;
-                    if rate.active == true
-                        && d.low_mode == true
-                        && rate.uptime >= 0.5 * rate.interval
-                    {
+                    if !prs.yield_err.is_empty() {
+                        app.yield_err.lock().unwrap().extend(prs.yield_err);
+                    };
+                    let mut rate = &mut app.rt_args.lock().unwrap().rate;
+                    if rate.active == true && rate.uptime >= 0.5 * rate.interval {
                         rate.active = false;
                         rate.uptime = 0.0;
                     }
@@ -264,7 +216,6 @@ where
             content: None,
             headers: std::collections::HashMap::new(),
             status: 0,
-            trys: 0,
         }
     }
 }

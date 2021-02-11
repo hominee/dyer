@@ -18,6 +18,10 @@ use tokio::task;
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 
+// FIXME add proxy support
+/// the `Client` that asynchronously executes `Request`s, with specified `connect-timeout`, `read-timeout` and
+/// `write-timeout`. Note that polling the `Request`s requires `tokio::runtime` (other asynchronous
+/// runtime, proxy will work in the future).
 pub struct Client;
 
 impl Client {
@@ -42,11 +46,12 @@ impl Client {
 
 impl Client {
     ///this function require a `hyper::Request` and `hyper::Client` to return the Response
-
     pub fn block_exec<F: Future>(f: F) -> F::Output {
         block_on(f)
     }
 
+    /// for the sake of convenience, polling the `Request` in no time, is designed for in creating `Spider.entry_profile` or `Spider.entry_task`  Note that:  DO NOT use it in most
+    /// of your code, cz it will slow your whole program down.
     pub async fn request<T, P>(req: Request<T, P>) -> Response<T, P>
     where
         T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
@@ -71,6 +76,8 @@ impl Client {
         }
     }
 
+    /// the core part of `Client`, as to poll the `Request`, and asynchronously aggregate data from
+    /// server.
     pub async fn exec(
         req: hRequest<hBody>,
         args: Option<bool>,
@@ -186,6 +193,7 @@ impl Client {
         }
     }
 
+    /// execute only one `Request` for common use.
     pub async fn exec_one<T, P>(req: Request<T, P>) -> Result<Response<T, P>, ResError>
     where
         T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
@@ -209,6 +217,7 @@ impl Client {
     }
 
     // FIXME it's not necessary to return Result, Vec<> will be fine.
+    /// execute multiple `Request` for common use.
     pub async fn exec_all<T, P>(
         mut reqs: Vec<Request<T, P>>,
         result: Arc<Mutex<Vec<Response<T, P>>>>,
@@ -256,7 +265,8 @@ impl Client {
         result.lock().unwrap().extend(ress);
     }
 
-    ///join spawned tokio-task
+    ///join spawned tokio-task, once it exceed the timing `threshold`, then forcefully join
+    ///it watch
     pub async fn watch(
         res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
         pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,

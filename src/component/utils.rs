@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+/// some utilities that useful and convenience for dealing with data flow.
+
 pub fn get_cookie(data: &str) -> HashMap<String, String> {
     let stop_word = ["path", "expires", "domain", "httponly"];
     let mut cookie = HashMap::new();

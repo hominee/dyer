@@ -3,7 +3,7 @@ pub mod profile;
 pub mod request;
 pub mod response;
 pub mod task;
-pub mod useragent;
+//pub mod useragent;
 pub mod utils;
 
 pub use client::Client;
@@ -11,7 +11,7 @@ pub use profile::Profile;
 pub use request::Request;
 pub use response::{ParseResult, Response};
 pub use task::Task;
-pub use useragent::UserAgent;
+//pub use useragent::UserAgent;
 pub use utils::get_cookie;
 
 use std::error::Error;
