@@ -60,6 +60,8 @@ impl std::fmt::Display for ResError {
     }
 }
 impl Error for ResError {}
+unsafe impl Send for ResError {}
+unsafe impl Sync for ResError {}
 
 #[derive(Debug)]
 pub struct TaskError {

@@ -7,7 +7,7 @@ use std::io::{BufRead, BufReader};
 
 use crate::component::{utils, Client, Request, ResError, Response};
 use futures::future::join_all;
-use futures::future::LocalBoxFuture;
+use futures::future::BoxFuture;
 use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
@@ -62,7 +62,7 @@ where
         f: (
             Request<T, P>,
             Option<
-                &(dyn Fn(&mut Response<T, P>) -> LocalBoxFuture<'_, Result<Profile<P>, ResError>>
+                &(dyn Fn(&mut Response<T, P>) -> BoxFuture<'_, Result<Profile<P>, ResError>>
                       + Send
                       + Sync),
             >,
@@ -86,20 +86,29 @@ where
         // poll all request concurrently
         let vres = join_all(vreq).await;
         let mut i = 0usize;
-        vres.into_iter().for_each(|r| {
+        for r in vres.into_iter() {
             let mut p = rs.pop().unwrap();
             match r {
                 Ok(res) => {
                     p.headers.extend(res.1);
                     p.status = res.2;
-                    let profile = Some(Profile::exec(&mut p).unwrap());
-                    log::trace!("gen profile: {:?}", profile);
-                    profiles.lock().unwrap().extend(profile);
+                    let mut pfiles = Vec::new();
+                    if f.1.is_none() {
+                        let profile = Profile::exec(&mut p).unwrap();
+                        pfiles.push(profile);
+                    } else {
+                        match (f.1.unwrap())(&mut p).await {
+                            Ok(p) => pfiles.push(p),
+                            Err(_) => {}
+                        }
+                    };
+                    log::trace!("gen profile: {:?}", pfiles);
+                    profiles.lock().unwrap().extend(pfiles);
                     i += 1;
                 }
                 Err(_) => {}
             }
-        });
+        }
         if i == 0 {
             error!("get {} Profiles out of {}", i, num);
         } else {

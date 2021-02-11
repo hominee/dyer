@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use typed_builder::TypedBuilder;
 
 /// default method used when open the `PipeLine`
-async fn pl_open<'a, C>() -> &'a Option<Arc<C>>
+async fn pl_open<'a, C>() -> &'a Option<C>
 where
     C: 'a,
 {
@@ -72,7 +72,7 @@ where
     I: Send + Sync + std::fmt::Debug + 'pl,
 {
     #[builder(default_code = r#"& | | pl_open().boxed_local() "#)]
-    pub open_pipeline: &'pl dyn Fn() -> LocalBoxFuture<'pl, &'pl Option<Arc<C>>>,
+    pub open_pipeline: &'pl dyn Fn() -> LocalBoxFuture<'pl, &'pl Option<C>>,
 
     #[builder(default_code = r#"&|  | pl_close::<I, C>().boxed_local() "#)]
     pub close_pipeline: &'pl dyn Fn() -> LocalBoxFuture<'pl, ()>,

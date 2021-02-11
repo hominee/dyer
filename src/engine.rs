@@ -133,15 +133,6 @@ impl Rate {
                 log::info!("active peroid");
                 self.active = true;
                 self.uptime = self.uptime.rem_euclid(self.peroid);
-                /*
-                 *if self.remains >= 2 {
-                 *    self.load -= 0.1;
-                 *}
-                 *if self.err >= 1 {
-                 *    self.load -= 0.2;
-                 *    return ();
-                 *}
-                 */
                 if self.stamps.len() >= 3 && (self.err as f64) / (self.stamps.len() as f64) <= 0.1 {
                     let mean: f64 =
                         self.stamps.iter().map(|t| t).sum::<f64>() / (self.stamps.len() as f64);
@@ -199,7 +190,6 @@ impl Rate {
                 self.remains as f64
             };
             log::info!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
-            //let len = self.remains - (self.load * (self.anchor - now) / self.interval) as u64;
             self.remains = self.remains - (len as u64);
             log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
@@ -563,7 +553,7 @@ where
                         info!("profile length too few or not exceeding max, generate Profile");
                         let pfile = self.profile.clone();
                         info!("spawn {} tokio task to generate Profile concurrently", 3);
-                        let f = spd.entry_profile().clone();
+                        let f = spd.entry_profile();
                         let johp = task::spawn(async move {
                             Profile::exec_all::<Entity, T>(pfile, 3usize, f).await;
                         });

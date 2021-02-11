@@ -102,32 +102,37 @@ where
                 &res.task.uri[0..77]
             );
             // status code between 200 - 299
-            let content = res.content.clone().unwrap();
-            let uri = res.task.uri.clone();
-            let pfile = res.profile.clone();
+            /*
+             *let content = res.content.clone().unwrap();
+             *let uri = res.task.uri.clone();
+             *let pfile = res.profile.clone();
+             */
             let ind = (&res.task.parser).to_string();
             let parser = spd
                 .get_parser(ind)
                 .expect(&format!("parser {} not found.", &res.task.parser));
             let data = (parser)(res);
-            match data {
-                Ok(prs) => Ok(prs),
-                Err(_) => {
-                    // no entities comes in.
-                    // leave None as default.
-                    log::error!("cannot parse Response");
-                    let mut r = ParseResult {
-                        req: vec![],
-                        task: vec![],
-                        profile: vec![pfile],
-                        entities: vec![],
-                        yield_err: vec![],
-                    };
-                    let s = format!("{}\n{}", uri, content);
-                    r.yield_err.push(s);
-                    Ok(r)
-                }
-            }
+            Ok(data)
+        /*
+         *match data {
+         *    Ok(prs) => Ok(prs),
+         *    Err(_) => {
+         *        // no entities comes in.
+         *        // leave None as default.
+         *        log::error!("cannot parse Response");
+         *        let mut r = ParseResult {
+         *            req: vec![],
+         *            task: vec![],
+         *            profile: vec![pfile],
+         *            entities: vec![],
+         *            yield_err: vec![],
+         *        };
+         *        let s = format!("{}\n{}", uri, content);
+         *        r.yield_err.push(s);
+         *        Ok(r)
+         *    }
+         *}
+         */
         } else {
             log::error!("failed Response: {:?}", res);
             let r = (mware.hand_err)(&mut vec![res], arg).await;

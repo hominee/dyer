@@ -1,16 +1,16 @@
 [package]
 name = "dyer"
-version = "0.1.1-alpha"
+version = "0.1.1-beta"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
-keywords = ["crawler", "spider", "web-crawling", "web-framework"]
+keywords = ["crawler", "spider", "web-crawling", "web-framework", "scrapy"]
 categories = ["network-programming", "web-programming"]
-description = " Dyer is designed for reliable, flexible and fast web-crawling, providing some high-level, comprehensive  features without compromising speed.  By means of event-driven, non-blocking I/O tokio and powerful, reliable [Rust programming"
-homepage = "https://github.com/HomelyGuy"
+description = " Dyer is designed for reliable, flexible and fast web-crawling, providing some high-level, comprehensive  features without compromising speed.  By means of event-driven, non-blocking I/O tokio and powerful, reliable Rust programming language."
+homepage = "https://crates.io/crates/dyer"
 repository = "https://github.com/HomelyGuy"
 documentation = "https://docs.rs/dyer"
-readme = "README"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,7 +20,6 @@ serde_json='1.0.57'
 tokio={ version = "0.2.22", features = [ "macros", "rt-threaded" ] }
 futures="0.3.12"
 typed-builder = "0.9.0"
-#async-trait="0.1"
 hyper = "0.13.8"
 hyper-tls="0.4.3"
 hyper-timeout="0.3.1"
@@ -30,6 +29,3 @@ bytes="0.5.6"
 signal-hook="0.1.17"
 log="0.4.13"
 rand="0.8.3"
-
-
-
