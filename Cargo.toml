@@ -25,11 +25,11 @@ hyper = "0.13.8"
 hyper-tls="0.4"
 hyper-timeout="0.3"
 brotli2='0.3'
-flate2='*'
+flate2='1.0'
 bytes="0.5.6"
 signal-hook="0.1"
 log="0.4"
-rand="*"
+rand="0.8"
 
 
 
