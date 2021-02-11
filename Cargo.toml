@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "0.1.1-unstable"
+version = "0.1.1-alpha"
 authors = ["HomelyGuy"]
 edition = "2018"
 
