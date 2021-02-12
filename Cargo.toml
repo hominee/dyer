@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "0.1.1-beta"
+version = "0.1.1"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
