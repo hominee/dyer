@@ -444,11 +444,11 @@ where
     }
 
     /// drive `Dyer` into running.
-    pub async fn run<C>(
+    pub async fn run<'b, C>(
         &'a mut self,
         spd: &'static dyn Spider<Entity, T, P>,
-        middleware: &'static MiddleWare<'a, Entity, T, P>,
-        pipeline: PipeLine<'_, Entity, C>,
+        middleware: &'a MiddleWare<'b, Entity, T, P>,
+        pipeline: PipeLine<'b, Entity, C>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
         C: Send + 'a,

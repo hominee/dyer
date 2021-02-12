@@ -19,7 +19,7 @@
 //! take [Scrapy Tutorial] as a guide to know the basics, step by step.
 //! * Add `Dyer` as dependency in you `Cargo.toml`
 //! * Writing a struct and implementing `Spider` Trait, customize parser to extract data and generate recursive `Task`
-////! * Writing `PipeLine` and `MiddleWare` to process data if necessary
+//! * Writing `PipeLine` and `MiddleWare` to process data if necessary
 //!
 //! [Scrapy Tutorial]: https://docs.scrapy.org/en/latest/intro/tutorial.html
 //!
@@ -218,8 +218,8 @@
 //! }
 //!
 //! #[tokio::main]
-//! fn main() {
-//!     static spd: Spd = Spd {};
+//! async fn main() {
+//!     static SPD: Spd = Spd {};
 //!     // since the `Quote` collected by parse_quote is complete, `MiddleWare` is not necessary,
 //!     let middleware = MiddleWare::<Items, Targ, Parg>::builder().build();
 //!     // writing a `PipeLine` to store them
@@ -230,8 +230,10 @@
 //!
 //!     // construct the app and start the crawler
 //!     let mut app: App<Items, Targ, Parg> = App::<Items, Targ, Parg>::new();
-//!     app.run(&spd, &middleware, pipeline).await;
+//!     app.run(&SPD, &middleware, pipeline).await;
+//!     Ok(())
 //! }
+//! ```
 //!
 //! As you expected, It is Done.
 
