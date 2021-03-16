@@ -16,14 +16,12 @@ where
     U: Serialize + std::fmt::Debug + Clone,
 {
     /// method to generate `Profile` throughout the whole program
-    fn entry_profile(
+    fn entry_profile<'a>(
         &self,
     ) -> (
         Request<T, P>,
         Option<
-            &(dyn Fn(&mut Response<T, P>) -> BoxFuture<'_, Result<Profile<P>, ResError>>
-                  + Send
-                  + Sync),
+            &(dyn Fn(Response<T, P>) -> BoxFuture<'a, Result<Profile<P>, ResError>> + Send + Sync),
         >,
     );
 

@@ -99,7 +99,7 @@ where
         if status <= 299 && status >= 200 {
             log::debug!(
                 "recycle profile, successful Response: uri: {}",
-                &res.task.uri[0..77]
+                &res.task.uri
             );
             // status code between 200 - 299
             /*

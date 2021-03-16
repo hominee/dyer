@@ -186,7 +186,11 @@ impl Client {
                 }
             }
             Err(e) => {
-                let err = e.into_cause().unwrap().to_string();
+                let err = if let Some(msg) = e.into_cause() {
+                    msg.to_string()
+                } else {
+                    "Unknow Error".to_string()
+                };
                 log::error!("cannot exec the request caused by {}.", err);
                 Err(ResError { desc: err })
             }

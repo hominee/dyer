@@ -70,7 +70,7 @@ impl Default for AppArg {
             profile_max: 5000,
             round_yield_err: 100,
             round_result: 100,
-            skip_history: false,
+            skip_history: true,
             rate: Rate::new(),
         }
     }

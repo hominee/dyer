@@ -62,7 +62,7 @@ where
         f: (
             Request<T, P>,
             Option<
-                &(dyn Fn(&mut Response<T, P>) -> BoxFuture<'_, Result<Profile<P>, ResError>>
+                &(dyn Fn(Response<T, P>) -> BoxFuture<'a, Result<Profile<P>, ResError>>
                       + Send
                       + Sync),
             >,
@@ -97,7 +97,7 @@ where
                         let profile = Profile::exec(&mut p).unwrap();
                         pfiles.push(profile);
                     } else {
-                        match (f.1.unwrap())(&mut p).await {
+                        match (f.1.unwrap())(p).await {
                             Ok(p) => pfiles.push(p),
                             Err(_) => {}
                         }
