@@ -15,9 +15,34 @@
 //! [scrapy]: https://scrapy.org
 //! [Rust programming language]: https://www.rust-lang.org
 //!
+//! # Main Functionalities
+//!
+//! `Dyer` is newly developed rust library, and has achieved some basic functionalities for
+//! building a crawer, web service and data processing. Nevertheless, it can tackle most common problems you meet.
+//!
+//! ## Real-browser Customization
+//!
+//! For each feeded `Task`, `dyer` will fake a `Profile` and combines them into a `Request` to
+//! satisfy the requirement of the target site. By means of powerful `ffi` interface of and web
+//! assemble of rust, intergration is not hard.
+//!
+//! ## Signal Handling
+//!
+//! Think about a scenario that errors, bugs and unexpected accidents are found when your app is running, what would you
+//! do? Stop the app, the entire program and the data are corupted. Nope, the result is not
+//! reliable. `dyer` will backup your history between certain gap, resumption is at your choice.
+//!
+//! ## Run-time Control
+//!
+//! Each `Task` and each `Profile` is scheduled with some gap, has a time stamp for validation,
+//! only the expired can be feeded to engine of `dyer`. Nevertheless `dyer` will limit the
+//! `Requests` sent to poll, the `Profile` to make, `Task` to load or store and so on [see `AppArg`].
+//!
+//! [see `AppArg`]: crate::engine::AppArg
+//!
 //! # Walk you through an example
 //!
-//! take [Scrapy Tutorial] as a guide to know the basics, step by step.
+//! Take [Scrapy Tutorial] as a guide to know the basics, step by step.
 //! * Add `dyer` as dependency in you `Cargo.toml`
 //! * Writing a struct and implementing `Spider` Trait, customize parser to extract data and generate recursive `Task`
 //! * Writing `PipeLine` and `MiddleWare` to process data if necessary
@@ -30,7 +55,7 @@
 //! needed for further.
 //!
 //! ```
-//! dyer = "0.1.1"
+//! dyer = "*"
 //! tokio = { version = "0.2", features = [ "macros", "rt-threaded" ] }
 //! futures = "*"
 //! serde = {version = "*", features = ["derive"] }
@@ -255,6 +280,22 @@
 //! ```
 //!
 //! As you expected, It is Done.
+//! The output file `result.json` is in the root directory which contains file `Cargo.toml`, and
+//! its content displays
+//!
+//! ```
+//! {"Quote":{"text":"“... a mind needs books as a sword needs a whetstone, if it is     to keep its edge.”","author":"George R.R. Martin","tags":["books","mind"]}}
+//! ...
+//! {"Quote":{"text":"“The world as we have created it is a process of our thinking.     It cannot be changed without changing our thinking.”","author":"Albert Einstein",    "tags":["change","deep-thoughts","thinking","world"]}}
+//! ```
+//!
+//! #Features to be added
+//!
+//! * proxy support
+//! * debugging support(not bad though for now)
+//! * more signal support(Ctrl+c for now)
+//! * autothrottling and more customized plugins support
+//! * more to go
 
 pub mod component;
 pub mod engine;
