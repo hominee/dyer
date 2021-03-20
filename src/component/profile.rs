@@ -86,29 +86,29 @@ where
         // poll all request concurrently
         let vres = join_all(vreq).await;
         let mut i = 0usize;
+        let mut pfiles = Vec::new();
         for r in vres.into_iter() {
             let mut p = rs.pop().unwrap();
             match r {
                 Ok(res) => {
                     p.headers.extend(res.1);
                     p.status = res.2;
-                    let mut pfiles = Vec::new();
                     if f.1.is_none() {
                         let profile = Profile::exec(&mut p).unwrap();
                         pfiles.push(profile);
                     } else {
                         match (f.1.unwrap())(p).await {
-                            Ok(p) => pfiles.push(p),
+                            Ok(profile) => pfiles.push(profile),
                             Err(_) => {}
                         }
                     };
                     log::trace!("gen profile: {:?}", pfiles);
-                    profiles.lock().unwrap().extend(pfiles);
                     i += 1;
                 }
                 Err(_) => {}
             }
         }
+        profiles.lock().unwrap().extend(pfiles);
         if i == 0 {
             error!("get {} Profiles out of {}", i, num);
         } else {
@@ -138,7 +138,7 @@ where
     }
 
     /// load unfinished or extra `Profile`s  
-    pub fn load(path: &str) -> Option<Vec<Profile<P>>> {
+    pub fn load(path: &str) -> Vec<Profile<P>> {
         let file = fs::OpenOptions::new()
             .read(true)
             .write(true)
@@ -153,7 +153,7 @@ where
                 task
             })
             .collect::<Vec<Profile<P>>>();
-        return Some(data);
+        return data;
     }
 }
 

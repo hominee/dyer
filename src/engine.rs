@@ -366,8 +366,7 @@ where
                     break;
                 }
             }
-            let (buf_task, buf_pfile) =
-                (middleware.hand_req)(&mut requests, self.rt_args.clone()).await;
+            let (buf_task, buf_pfile) = (middleware.hand_req)(&mut requests, self).await;
             buf_req.extend(requests);
             self.req_tmp.lock().unwrap().extend(buf_req);
             self.task.lock().unwrap().extend(buf_task);
@@ -467,13 +466,13 @@ where
             self.task.lock().unwrap().extend(tasks);
         } else {
             log::warn!("use the history file.");
-            let reqs: Vec<Request<T, P>> = Request::load("../data/request").unwrap();
-            let req_tmp: Vec<Request<T, P>> = Request::load("../data/request_tmp").unwrap();
-            let profile: Vec<Profile<P>> = Profile::load("../data/profile").unwrap();
+            let reqs: Vec<Request<T, P>> = Request::load("../data/request");
+            let req_tmp: Vec<Request<T, P>> = Request::load("../data/request_tmp");
+            let profile: Vec<Profile<P>> = Profile::load("../data/profile");
             let vfiles = self.buf_task("../data/tasks/");
             if !vfiles.is_empty() {
                 let file = format!("../data/tasks/{}", vfiles[0]);
-                let task: Vec<Task<T>> = Task::load(&file).unwrap();
+                let task: Vec<Task<T>> = Task::load(&file);
                 log::info!("{} loaded {} Task.", file, task.len());
                 self.task = Arc::new(Mutex::new(task));
             } else {
@@ -600,7 +599,7 @@ where
                         } else if vfiles.len() >= 2 {
                             let file_new = format!("../data/tasks/{}", vfiles[1]);
                             log::info!("load new task in {}", file_new);
-                            let tsks = Task::load(&file_new).unwrap_or(vec![]);
+                            let tsks = Task::load(&file_new);
                             self.task.lock().unwrap().extend(tsks);
                         }
                     }

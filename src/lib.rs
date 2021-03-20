@@ -189,12 +189,14 @@
 //!         None
 //!     }
 //!
-//!     // `Task` to be executed when starting `dyer`
+//!     // `Task` to be executed when starting `dyer`. Note that this function must reproduce a
+//!     // non-empty vector, if not, the whole program will be left at blank.
 //!     fn entry_task(&self) -> Stem<Vec<Task<Targ>>> {
 //!         let mut task = Task::default();
 //!
 //!         // all infomation needed is uri and parser
 //!         task.uri = "https://quotes.toscrape.com".to_string();
+//!         // parser is indexed by a `String` name, you can check that in the function `get_parser`.
 //!         task.parser = "parse_quote".to_string();
 //!         Ok(vec![task])
 //!     }
@@ -215,8 +217,8 @@
 //!         let mut req = Request::<Targ, Parg>::default();
 //!         req.task.uri = "https://quotes.toscrape.com".to_string();
 //!         // as the domain suggests this site is specially built for crawling,
-//!         // you do not have to pretend as a real device
-//!         // leave the `Profile` generator as empty
+//!         // you do not have to pretend as a real device,
+//!         // leave the `Profile` processor as empty
 //!         (req, None)
 //!     }
 //! }
@@ -289,7 +291,7 @@
 //! {"Quote":{"text":"“The world as we have created it is a process of our thinking.     It cannot be changed without changing our thinking.”","author":"Albert Einstein",    "tags":["change","deep-thoughts","thinking","world"]}}
 //! ```
 //!
-//! #Features to be added
+//! # Features to be added
 //!
 //! * proxy support
 //! * debugging support(not bad though for now)

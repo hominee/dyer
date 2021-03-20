@@ -4,12 +4,11 @@ extern crate hyper;
 extern crate hyper_tls;
 
 use crate::component::{ParseError, Profile, Request, Task};
-use crate::engine::{App, AppArg};
+use crate::engine::App;
 use crate::plugin::{MiddleWare, Spider};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;
-use std::sync::{Arc, Mutex};
 
 /// the parsed result returned by `parser`.
 pub struct ParseResult<E, T, P>
@@ -89,7 +88,7 @@ where
         res: Response<T, P>,
         spd: &'static dyn Spider<E, T, P>,
         mware: &'t MiddleWare<'b, E, T, P>,
-        arg: Arc<Mutex<AppArg>>,
+        app: &'b mut App<E, T, P>,
     ) -> Result<ParseResult<E, T, P>, ParseError>
     where
         E: Serialize + std::fmt::Debug + Clone + Send,
@@ -102,46 +101,21 @@ where
                 &res.task.uri
             );
             // status code between 200 - 299
-            /*
-             *let content = res.content.clone().unwrap();
-             *let uri = res.task.uri.clone();
-             *let pfile = res.profile.clone();
-             */
             let ind = (&res.task.parser).to_string();
             let parser = spd
                 .get_parser(ind)
                 .expect(&format!("parser {} not found.", &res.task.parser));
             let data = (parser)(res);
             Ok(data)
-        /*
-         *match data {
-         *    Ok(prs) => Ok(prs),
-         *    Err(_) => {
-         *        // no entities comes in.
-         *        // leave None as default.
-         *        log::error!("cannot parse Response");
-         *        let mut r = ParseResult {
-         *            req: vec![],
-         *            task: vec![],
-         *            profile: vec![pfile],
-         *            entities: vec![],
-         *            yield_err: vec![],
-         *        };
-         *        let s = format!("{}\n{}", uri, content);
-         *        r.yield_err.push(s);
-         *        Ok(r)
-         *    }
-         *}
-         */
         } else {
             log::error!("failed Response: {:?}", res);
-            let r = (mware.hand_err)(&mut vec![res], arg).await;
+            (mware.hand_err)(&mut vec![res], app).await;
             Ok(ParseResult {
-                task: r.0,
-                profile: r.1,
-                req: r.2,
+                task: Vec::new(),
+                profile: Vec::new(),
+                req: Vec::new(),
                 entities: vec![],
-                yield_err: r.3,
+                yield_err: Vec::new(),
             })
         }
     }
@@ -161,28 +135,27 @@ where
             let t = app.res.lock().unwrap().remove(0);
             v.push(t);
         });
-        (mware.hand_res)(&mut v, app.rt_args.clone()).await;
+        (mware.hand_res)(&mut v, app).await;
         while let Some(res) = v.pop() {
-            let fut = Response::parse(res, spd, &mware, app.rt_args.clone());
+            let fut = Response::parse(res, spd, &mware, app);
             match fut.await {
                 Ok(mut prs) => {
                     if !prs.req.is_empty() {
-                        let (task, pfile) =
-                            (mware.hand_req)(&mut prs.req, app.rt_args.clone()).await;
+                        let (task, pfile) = (mware.hand_req)(&mut prs.req, app).await;
                         prs.profile.extend(pfile);
                         prs.task.extend(task);
                         app.req.lock().unwrap().extend(prs.req);
                     }
                     if !prs.profile.is_empty() {
-                        (mware.hand_profile)(&mut prs.profile, app.rt_args.clone()).await;
+                        (mware.hand_profile)(&mut prs.profile, app).await;
                         app.profile.lock().unwrap().extend(prs.profile);
                     }
                     if !prs.task.is_empty() {
-                        (mware.hand_task)(&mut prs.task, app.rt_args.clone()).await;
+                        (mware.hand_task)(&mut prs.task, app).await;
                         app.task_tmp.lock().unwrap().extend(prs.task);
                     }
                     if !prs.entities.is_empty() {
-                        (mware.hand_item)(&mut prs.entities, app.rt_args.clone()).await;
+                        (mware.hand_item)(&mut prs.entities, app).await;
                         app.result.lock().unwrap().extend(prs.entities);
                     }
                     if !prs.yield_err.is_empty() {

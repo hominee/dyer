@@ -55,7 +55,7 @@ where
     }
 
     /// load unfinished or extra `Task`s  
-    pub fn load(path: &str) -> Option<Vec<Task<T>>> {
+    pub fn load(path: &str) -> Vec<Task<T>> {
         // load Profile here
         let file = fs::OpenOptions::new()
             .read(true)
@@ -71,7 +71,7 @@ where
                 task
             })
             .collect::<Vec<Task<T>>>();
-        return Some(data);
+        return data;
     }
 }
 

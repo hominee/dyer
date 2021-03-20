@@ -1,31 +1,35 @@
 extern crate typed_builder;
 
 use crate::component::{Profile, Request, Response, Task};
-use crate::engine::AppArg;
+use crate::engine::App;
 use futures::future::{FutureExt, LocalBoxFuture};
-use std::sync::{Arc, Mutex};
 use typed_builder::TypedBuilder;
 
 /// default method for process `Profile` in `MiddleWare`
-pub async fn hprofile<P>(_files: &mut Vec<Profile<P>>, _arg: Arc<Mutex<AppArg>>)
+pub async fn hprofile<E, T, P>(_files: &mut Vec<Profile<P>>, _app: &mut App<E, T, P>)
 where
+    E: Send,
+    T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
 }
 
 /// default method for process `Task` in `MiddleWare`
-pub async fn htask<T>(_tasks: &mut Vec<Task<T>>, _arg: Arc<Mutex<AppArg>>)
+pub async fn htask<E, T, P>(_tasks: &mut Vec<Task<T>>, _app: &mut App<E, T, P>)
 where
+    E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
+    P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
 }
 
 /// default method for process `Request` in `MiddleWare`
-pub async fn hreq<T, P>(
+pub async fn hreq<E, T, P>(
     _reqs: &mut Vec<Request<T, P>>,
-    _arg: Arc<Mutex<AppArg>>,
+    _app: &mut App<E, T, P>,
 ) -> (Vec<Task<T>>, Vec<Profile<P>>)
 where
+    E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
@@ -33,32 +37,27 @@ where
 }
 
 /// default method for process `Response` in `MiddleWare`
-pub async fn hres<T, P>(_res: &mut Vec<Response<T, P>>, _arg: Arc<Mutex<AppArg>>)
+pub async fn hres<E, T, P>(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>)
 where
+    E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
 }
 
 /// default method for process `Item` in `MiddleWare`
-pub async fn hitem<U>(_items: &mut Vec<U>, _arg: Arc<Mutex<AppArg>>)
+pub async fn hitem<E, T, P>(_items: &mut Vec<E>, _app: &mut App<E, T, P>)
 where
-    U: Send,
+    T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
+    P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
+    E: Send,
 {
 }
 
 /// default method for process failed `Response` in `MiddleWare`
-pub async fn herr<T, P>(
-    _res: &mut Vec<Response<T, P>>,
-    _arg: Arc<Mutex<AppArg>>,
-) -> (
-    Vec<Task<T>>,
-    Vec<Profile<P>>,
-    Vec<Request<T, P>>,
-    Vec<String>,
-    bool,
-)
+pub async fn herr<E, T, P>(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>)
 where
+    E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
@@ -66,7 +65,6 @@ where
     let mut profiles = Vec::new();
     let reqs = Vec::new();
     let mut yerrs = Vec::new();
-    let redirect = false;
     while let Some(mut res) = _res.pop() {
         log::error!("response error: {}, uri: {}", res.status, res.task.uri);
         if res.task.trys >= 1 {
@@ -86,12 +84,16 @@ where
             profiles.push(res.profile);
         }
     }
-    (tasks, profiles, reqs, yerrs, redirect)
+    _app.task.lock().unwrap().extend(tasks);
+    _app.profile.lock().unwrap().extend(profiles);
+    _app.req.lock().unwrap().extend(reqs);
+    _app.yield_err.lock().unwrap().extend(yerrs);
 }
 
 /// default method for failing parsing `Response` in `MiddleWare`
-pub async fn hyerr<T, P>(_res: &mut Vec<Response<T, P>>, _arg: Arc<Mutex<AppArg>>)
+pub async fn hyerr<E, T, P>(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>)
 where
+    E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
 {
@@ -100,75 +102,74 @@ where
 /// plugin that process data flow in and out of `Spider` between component, each member has a
 /// default method corresponding to the most common cases. Customization is easy
 /// ```
-/// async fn hand_item<U>(items: &mut Vec<U>, _arg: Arc<Mutex<AppArg>>) where U: Send {
+/// async fn hand_item<E, T, P>(items: &mut Vec<E>, _app: &mut App<E, T, P>)
+/// where
+///    E: Send,
+///    T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
+///    P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
+///
+/// {
 ///     println!("process {} items", items.len());
 /// }
-/// let middleware = MiddleWare::builder().hand_item(&|items: &mut Vec<U>, arg: Arc<Mutex<AppArg>>| hand_item(items, arg).boxed_local() ).build().unwrap();
+/// let middleware = MiddleWare::builder().hand_item(&|items: &mut Vec<E>, app: &mut App<E, T, P>| hand_item(items, app).boxed_local() ).build().unwrap();
 /// ```
-/// the member that has been specified is assigned to the default method.
+/// the member that has not been specified is assigned to the default method.
 #[derive(TypedBuilder)]
-pub struct MiddleWare<'md, U, T, P>
+pub struct MiddleWare<'md, E, T, P>
 where
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send + 'md,
     P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + 'md,
-    U: Send + 'md,
+    E: Send + 'md,
 {
     #[builder(
-        default_code = r#" &|profiles: &mut Vec<Profile<P>>, arg: Arc<Mutex<AppArg>>| hprofile(profiles, arg).boxed_local() "#
+        default_code = r#" &|profiles: &mut Vec<Profile<P>>, app: &mut App<E, T, P>| hprofile(profiles, app).boxed_local() "#
     )]
-    pub hand_profile:
-        &'md dyn for<'a> Fn(&'a mut Vec<Profile<P>>, Arc<Mutex<AppArg>>) -> LocalBoxFuture<'a, ()>,
+    pub hand_profile: &'md dyn for<'a> Fn(
+        &'a mut Vec<Profile<P>>,
+        &'a mut App<E, T, P>,
+    ) -> LocalBoxFuture<'a, ()>,
 
     #[builder(
-        default_code = r#"&| tasks: &mut Vec<Task<T>>, arg: Arc<Mutex<AppArg>>| htask(tasks, arg).boxed_local() "#
+        default_code = r#"&| tasks: &mut Vec<Task<T>>, app: &mut App<E, T, P> | htask(tasks, app).boxed_local() "#
     )]
     pub hand_task:
-        &'md dyn for<'a> Fn(&'a mut Vec<Task<T>>, Arc<Mutex<AppArg>>) -> LocalBoxFuture<'a, ()>,
+        &'md dyn for<'a> Fn(&'a mut Vec<Task<T>>, &'a mut App<E, T, P>) -> LocalBoxFuture<'a, ()>,
 
     #[builder(
-        default_code = r#" &| req: &mut Vec<Request<T, P>>, arg: Arc<Mutex<AppArg>>| hreq(req, arg).boxed_local() "#
+        default_code = r#" &| req: &mut Vec<Request<T, P>>, app: &mut App<E, T, P>| hreq(req, app).boxed_local() "#
     )]
     pub hand_req: &'md dyn for<'a> Fn(
         &'a mut Vec<Request<T, P>>,
-        Arc<Mutex<AppArg>>,
+        &'a mut App<E, T, P>,
     ) -> LocalBoxFuture<'a, (Vec<Task<T>>, Vec<Profile<P>>)>,
 
     #[builder(
-        default_code = r#"&|responses: &mut Vec<Response<T, P>>, arg: Arc<Mutex<AppArg>>| hres(responses, arg).boxed_local() "#
+        default_code = r#"&|responses: &mut Vec<Response<T, P>>, app: &mut App<E, T, P>| hres(responses, app).boxed_local() "#
     )]
     pub hand_res: &'md dyn for<'a> Fn(
         &'a mut Vec<Response<T, P>>,
-        Arc<Mutex<AppArg>>,
+        &'a mut App<E, T, P>,
     ) -> LocalBoxFuture<'a, ()>,
 
     #[builder(
-        default_code = r#"&|items: &mut Vec<U>, arg: Arc<Mutex<AppArg>>| hitem(items, arg).boxed_local() "#
+        default_code = r#"&|items: &mut Vec<E>, app: &mut App<E, T, P>| hitem(items, app).boxed_local() "#
     )]
     pub hand_item:
-        &'md dyn for<'a> Fn(&'a mut Vec<U>, Arc<Mutex<AppArg>>) -> LocalBoxFuture<'a, ()>,
+        &'md dyn for<'a> Fn(&'a mut Vec<E>, &'a mut App<E, T, P>) -> LocalBoxFuture<'a, ()>,
 
     #[builder(
-        default_code = r#"&|yerrs: &mut Vec<Response<T, P>>, arg: Arc<Mutex<AppArg>>| hyerr(yerrs, arg).boxed_local() "#
+        default_code = r#"&|yerrs: &mut Vec<Response<T, P>>, app: &mut App<E, T, P>| hyerr(yerrs, app).boxed_local() "#
     )]
     pub hand_yerr: &'md dyn for<'a> Fn(
         &'a mut Vec<Response<T, P>>,
-        Arc<Mutex<AppArg>>,
+        &'a mut App<E, T, P>,
     ) -> LocalBoxFuture<'a, ()>,
 
     #[builder(
-        default_code = r#" &| mut res: &mut Vec<Response<T, P>>, arg: Arc<Mutex<AppArg>>| herr(res, arg).boxed_local() "#
+        default_code = r#" &| mut res: &mut Vec<Response<T, P>>, app: &mut App<E, T, P>| herr(res, app).boxed_local() "#
     )]
     pub hand_err: &'md dyn for<'a> Fn(
         &'a mut Vec<Response<T, P>>,
-        Arc<Mutex<AppArg>>,
-    ) -> LocalBoxFuture<
-        'a,
-        (
-            Vec<Task<T>>,
-            Vec<Profile<P>>,
-            Vec<Request<T, P>>,
-            Vec<String>,
-            bool,
-        ),
-    >,
+        &'a mut App<E, T, P>,
+    ) -> LocalBoxFuture<'a, ()>,
 }
