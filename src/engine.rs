@@ -185,12 +185,13 @@ impl Rate {
             let len = if self.remains as f64 >= delta + 0.5 && delta >= 0.0 {
                 self.remains as f64 - delta
             } else if (self.remains as f64) < delta + 0.5 && delta >= 0.0 {
+                self.remains = delta as u64;
                 0.0
             } else {
                 self.remains as f64
             };
             log::info!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
-            self.remains = self.remains - (len as u64) + 3;
+            self.remains = self.remains - (len as u64) + 1;
             log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
         } else {
@@ -198,17 +199,18 @@ impl Rate {
             let len = if self.low_remains as f64 >= delta + 0.5 && delta >= 0.0 {
                 self.low_remains as f64 - delta
             } else if (self.low_remains as f64) < delta + 0.5 && delta >= 0.0 {
+                self.low_remains = delta as u64;
                 0.0
             } else {
                 self.low_remains as f64
             };
             log::info!(
-                "remains:{}, delta: {}, len: {}",
+                "low remains:{}, delta: {}, len: {}",
                 self.low_remains,
                 delta,
                 len
             );
-            self.low_remains = self.low_remains - (len as u64) + 3;
+            self.low_remains = self.low_remains - (len as u64) + 1;
             log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
         }
@@ -325,12 +327,12 @@ where
     where
         C: Send + 'a,
     {
-        self.info();
         if self.yield_err.lock().unwrap().len() > self.rt_args.lock().unwrap().round_yield_err {
             log::debug!("pipeline put out yield_parse_err");
             (pipeline.process_yerr)(&mut self.yield_err).await;
         }
         if self.result.lock().unwrap().len() > self.rt_args.lock().unwrap().round_result {
+            self.info();
             log::debug!("pipeline put out Entity");
             (pipeline.process_item)(&mut self.result).await;
         }
@@ -377,7 +379,7 @@ where
 
     /// spawn polling `Request` as `tokio::task` and executing asynchronously,
     pub async fn spawn_task(&mut self) {
-        if self.fut_res.lock().unwrap().len() > 20 {
+        if self.fut_res.lock().unwrap().len() > 50 {
             log::warn!("enough Future Response, spawn no task.");
         } else {
             log::debug!("take request out to be executed.");

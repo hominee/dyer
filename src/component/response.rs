@@ -3,7 +3,7 @@ extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
 
-use crate::component::{ParseError, Profile, Request, Task};
+use crate::component::{Profile, Request, Task};
 use crate::engine::App;
 use crate::plugin::{MiddleWare, Spider};
 use serde::{Deserialize, Serialize};
@@ -101,40 +101,22 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     /// specifically, dispose a `Response`, handle failed or corrupt `Response`, and return `ParseResult` or `ParseError`.
-    pub async fn parse<'b, E>(
+    pub async fn parse<E>(
         res: Response<T, P>,
         spd: &'static dyn Spider<E, T, P>,
-        mware: &'t MiddleWare<'b, E, T, P>,
-        app: &'b mut App<E, T, P>,
-    ) -> Result<ParseResult<E, T, P>, ParseError>
+    ) -> ParseResult<E, T, P>
     where
         E: Serialize + std::fmt::Debug + Clone + Send,
     {
-        //dispath handlers dependent on their status code
-        let status = res.status;
-        if status <= 299 && status >= 200 {
-            log::debug!(
-                "recycle profile, successful Response: uri: {}",
-                &res.task.uri
-            );
-            // status code between 200 - 299
-            let ind = (&res.task.parser).to_string();
-            let parser = spd
-                .get_parser(ind)
-                .expect(&format!("parser {} not found.", &res.task.parser));
-            let data = (parser)(res);
-            Ok(data)
-        } else {
-            log::error!("failed Response: {:?}", res);
-            (mware.hand_err)(&mut vec![res], app).await;
-            Ok(ParseResult {
-                task: Vec::new(),
-                profile: Vec::new(),
-                req: Vec::new(),
-                entities: vec![],
-                yield_err: Vec::new(),
-            })
-        }
+        log::debug!(
+            "recycle profile, successful Response: uri: {}",
+            &res.task.uri
+        );
+        let ind = (&res.task.parser).to_string();
+        let parser = spd
+            .get_parser(ind)
+            .expect(&format!("parser {} not found.", &res.task.parser));
+        (parser)(res)
     }
 
     /// parse multiple `Response` in `App`, then drive all `ParseResult` into `MiddleWare`
@@ -147,49 +129,56 @@ where
         E: Serialize + std::fmt::Debug + Clone + Send,
     {
         let mut v = Vec::new();
+        let mut tsks = Vec::new();
+        let mut pfiles = Vec::new();
+        let mut reqs = Vec::new();
+        let mut yerr = Vec::new();
+        let mut ens = Vec::new();
+        let mut errs = Vec::new();
+
         let len = app.res.lock().unwrap().len();
         vec![0; len.min(round)].iter().for_each(|_| {
             let t = app.res.lock().unwrap().remove(0);
-            v.push(t);
-        });
-        (mware.hand_res)(&mut v, app).await;
-        while let Some(res) = v.pop() {
-            let fut = Response::parse(res, spd, &mware, app);
-            match fut.await {
-                Ok(mut prs) => {
-                    if !prs.req.is_empty() {
-                        let (task, pfile) = (mware.hand_req)(&mut prs.req, app).await;
-                        prs.profile.extend(pfile);
-                        prs.task.extend(task);
-                        app.req.lock().unwrap().extend(prs.req);
-                    }
-                    if !prs.profile.is_empty() {
-                        (mware.hand_profile)(&mut prs.profile, app).await;
-                        app.profile.lock().unwrap().extend(prs.profile);
-                    }
-                    if !prs.task.is_empty() {
-                        (mware.hand_task)(&mut prs.task, app).await;
-                        app.task_tmp.lock().unwrap().extend(prs.task);
-                    }
-                    if !prs.entities.is_empty() {
-                        (mware.hand_item)(&mut prs.entities, app).await;
-                        app.result.lock().unwrap().extend(prs.entities);
-                    }
-                    if !prs.yield_err.is_empty() {
-                        app.yield_err.lock().unwrap().extend(prs.yield_err);
-                    };
-                    let mut rate = &mut app.rt_args.lock().unwrap().rate;
-                    if rate.active == true && rate.uptime >= 0.5 * rate.interval {
-                        rate.active = false;
-                        rate.uptime = 0.0;
-                    }
-                }
-                Err(_) => {
-                    // res has err code (non-200) and cannot handled by error handle
-                    // discard the response that without task or profile.
-                    log::error!("parse response failed.");
-                }
+            if t.status >= 200 && t.status <= 299 {
+                v.push(t);
+            } else {
+                errs.push(t);
             }
+        });
+        if errs.len() > 0 {
+            (mware.hand_err)(&mut errs, app).await;
+        }
+        if v.len() > 0 {
+            (mware.hand_res)(&mut v, app).await;
+        }
+        while let Some(res) = v.pop() {
+            let prs = Response::parse(res, spd).await;
+            tsks.extend(prs.task);
+            pfiles.extend(prs.profile);
+            reqs.extend(prs.req);
+            yerr.extend(prs.yield_err);
+            ens.extend(prs.entities);
+        }
+        if !reqs.is_empty() {
+            let (task, pfile) = (mware.hand_req)(&mut reqs, app).await;
+            app.profile.lock().unwrap().extend(pfile);
+            app.task.lock().unwrap().extend(task);
+            app.req.lock().unwrap().extend(reqs);
+        }
+        if !pfiles.is_empty() {
+            (mware.hand_profile)(&mut pfiles, app).await;
+            app.profile.lock().unwrap().extend(pfiles);
+        }
+        if !tsks.is_empty() {
+            (mware.hand_task)(&mut tsks, app).await;
+            app.task_tmp.lock().unwrap().extend(tsks);
+        }
+        if !ens.is_empty() {
+            (mware.hand_item)(&mut ens, app).await;
+            app.result.lock().unwrap().extend(ens);
+        }
+        if !yerr.is_empty() {
+            app.yield_err.lock().unwrap().extend(yerr);
         }
     }
 }
