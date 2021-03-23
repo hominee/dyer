@@ -104,8 +104,8 @@ impl Rate {
             alltime: 0.0,
             uptime: 0.0,
             active: true,
-            load: 90.0,
-            low_load: 90.0,
+            load: 99.0,
+            low_load: 99.0,
             remains: 110,
             low_remains: 90,
             err: 0,
@@ -190,7 +190,7 @@ impl Rate {
                 self.remains as f64
             };
             log::info!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
-            self.remains = self.remains - (len as u64);
+            self.remains = self.remains - (len as u64) + 3;
             log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
         } else {
@@ -208,7 +208,7 @@ impl Rate {
                 delta,
                 len
             );
-            self.low_remains = self.low_remains - (len as u64);
+            self.low_remains = self.low_remains - (len as u64) + 3;
             log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
         }
@@ -325,6 +325,7 @@ where
     where
         C: Send + 'a,
     {
+        self.info();
         if self.yield_err.lock().unwrap().len() > self.rt_args.lock().unwrap().round_yield_err {
             log::debug!("pipeline put out yield_parse_err");
             (pipeline.process_yerr)(&mut self.yield_err).await;

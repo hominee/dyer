@@ -28,6 +28,23 @@ where
     /// a vector of record for failed `Response`, for the use of debug.
     pub yield_err: Vec<String>,
 }
+
+impl<E, T, P> Default for ParseResult<E, T, P>
+where
+    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    E: Serialize + std::fmt::Debug + Clone,
+{
+    fn default() -> Self {
+        ParseResult {
+            task: Vec::new(),
+            profile: Vec::new(),
+            req: Vec::new(),
+            entities: Vec::new(),
+            yield_err: Vec::new(),
+        }
+    }
+}
 unsafe impl<E, T, P> Sync for ParseResult<E, T, P>
 where
     T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,

@@ -297,12 +297,19 @@ impl Client {
         });
         // no non-out-of-schedule response attained, join the first one instead
         if handle_r.is_empty() && !res.lock().unwrap().is_empty() {
-            let (tic, handle) = res.lock().unwrap().remove(0);
-            //handle_r.push(handle);
-            if now - tic as f64 >= 2.718 {
-                handle_r.push(handle)
-            } else {
-                res.lock().unwrap().insert(0, (tic, handle));
+            let len = res.lock().unwrap().len();
+            let mlen = len.min(3);
+            let mut nr = Vec::new();
+            for _ in 0..mlen {
+                let (tic, handle) = res.lock().unwrap().remove(0);
+                if now - tic as f64 >= 2.718 {
+                    handle_r.push(handle)
+                } else {
+                    nr.push((tic, handle));
+                }
+            }
+            while let Some(r) = nr.pop() {
+                res.lock().unwrap().insert(0, r);
             }
         }
         info!(
