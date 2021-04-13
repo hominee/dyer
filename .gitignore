@@ -4,3 +4,4 @@ Cargo.lock
 data/
 log/
 src/.* 
+*/*.swp

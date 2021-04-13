@@ -24,7 +24,7 @@ where
     /// Formdata or other request parameter stored here
     pub body: Option<HashMap<String, String>>,
     /// checkpoint in seconds by which this `Task` is allowed to be executed
-    pub able: u64,
+    pub able: f64,
     // FIXME add an member to AppArg
     /// times that this `Task` has failed, by default, the threshold is 2, customize it in `AppArg`
     pub trys: u8,
@@ -39,7 +39,7 @@ where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     /// store unfinished or extra `Task`s,
-    pub fn stored(path: &str, task: &Arc<Mutex<Vec<Task<T>>>>) {
+    pub fn stored(path: &str, task: &mut Arc<Mutex<Vec<Task<T>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -47,10 +47,10 @@ where
             .open(path)
             .unwrap();
         let mut buf = Vec::new();
-        task.lock().unwrap().iter().for_each(|r| {
+        while let Some(r) = task.lock().unwrap().pop() {
             let s = serde_json::to_string(&r).unwrap();
             buf.push(s);
-        });
+        }
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
@@ -83,7 +83,7 @@ where
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         Task::<T> {
             uri: "".to_string(),
             method: "GET".to_string(),

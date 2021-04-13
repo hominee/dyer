@@ -6,7 +6,7 @@ use futures::future::{FutureExt, LocalBoxFuture};
 use typed_builder::TypedBuilder;
 
 /// default method for process `Profile` in `MiddleWare`
-pub async fn hprofile<E, T, P>(_files: &mut Vec<Profile<P>>, _app: &mut App<E, T, P>)
+pub async fn hprofile<E, T, P>(_profiles: &mut Vec<Profile<P>>, _app: &mut App<E, T, P>)
 where
     E: Send,
     T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
@@ -101,17 +101,63 @@ where
 
 /// plugin that process data flow in and out of `Spider` between component, each member has a
 /// default method corresponding to the most common cases. Customization is easy
-/// ```
-/// async fn hand_item<E, T, P>(items: &mut Vec<E>, _app: &mut App<E, T, P>)
-/// where
-///    E: Send,
-///    T: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone + Send,
-///    P: serde::Serialize + for<'de> serde::Deserialize<'de> + std::fmt::Debug + Clone,
+/// ```no_run
+/// use futures::future::FutureExt;
+/// # use crate::dyer::component::{Profile, Request, Response, Task};
+/// # use crate::dyer::{plug, MiddleWare};
+/// # use crate::dyer::engine::App;
+/// # use serde::{Deserialize, Serialize};
+/// # #[derive(std::fmt::Debug)]
+/// # pub struct E;
+/// # unsafe impl Send for E {}
+/// # unsafe impl Sync for E {}
+/// # #[derive(std::fmt::Debug, Serialize, Deserialize, Clone)]
+/// # pub struct T;
+/// # unsafe impl Send for T {}
+/// # #[derive(std::fmt::Debug, Serialize, Deserialize, Clone)]
+/// # pub struct P;
+/// # async fn hand_profile(_profiles: &mut Vec<Profile<P>>, _app: &mut App<E, T, P>) {}
+/// # async fn hand_task(_tasks: &mut Vec<Task<T>>, _app: &mut App<E, T, P>) {}
+/// # async fn hand_req(
+/// #     _reqs: &mut Vec<Request<T, P>>,
+/// #     _app: &mut App<E, T, P>,
+/// # ) -> (Vec<Task<T>>, Vec<Profile<P>>) {
+/// #     (vec![], vec![])
+/// # }
+/// # async fn hand_res(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>) {}
+/// # async fn hand_item(_items: &mut Vec<E>, _app: &mut App<E, T, P>) {}
+/// # async fn hand_err(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>) {}
+/// # async fn hand_yerr(_res: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>) {}
 ///
-/// {
-///     println!("process {} items", items.len());
-/// }
-/// let middleware = MiddleWare::builder().hand_item(&|items: &mut Vec<E>, app: &mut App<E, T, P>| hand_item(items, app).boxed_local() ).build().unwrap();
+/// // the recommanded way to initialize a `MiddleWare` by means of macro `plug!`
+/// plug!(MiddleWare<E, T, P> {
+///         hand_profile: hand_profile,
+///         hand_task: hand_task,
+///         hand_req: hand_req,
+///         hand_res: hand_res,
+///         hand_item: hand_item
+///         hand_err: hand_err
+///         //hand_yerr: hand_yerr
+///     }
+/// );
+///
+/// // the the second way is also at ease
+/// let mut md = MiddleWare::<E, T, P>::builder().build();
+/// md.hand_yerr = &|_yerrs: &mut Vec<Response<T, P>>, _app: &mut App<E, T, P>| {
+///     hand_yerr(_yerrs, _app).boxed_local()
+/// };
+///
+/// // the traditional way is supported as well
+/// // but remeber that initializations of all members are required
+/// MiddleWare::<E, T, P> {
+///     hand_task: &|_tasks: &mut Vec<Task<T>>, _app: &mut App<E, T, P>| {
+///         hand_task(_tasks, _app).boxed_local()
+///     },
+///     hand_item: &|_items: &mut Vec<E>, _app: &mut App<E, T, P>| {
+///         hand_item(_items, _app).boxed_local()
+///     },
+///     //...
+/// };
 /// ```
 /// the member that has not been specified is assigned to the default method.
 #[derive(TypedBuilder)]

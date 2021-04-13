@@ -1,4 +1,4 @@
-extern crate bytes;
+//extern crate bytes;
 extern crate futures;
 extern crate hyper;
 extern crate hyper_tls;
@@ -101,10 +101,7 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     /// specifically, dispose a `Response`, handle failed or corrupt `Response`, and return `ParseResult` or `ParseError`.
-    pub async fn parse<E>(
-        res: Response<T, P>,
-        spd: &'static dyn Spider<E, T, P>,
-    ) -> ParseResult<E, T, P>
+    pub async fn parse<E>(res: Response<T, P>, spd: &'t dyn Spider<E, T, P>) -> ParseResult<E, T, P>
     where
         E: Serialize + std::fmt::Debug + Clone + Send,
     {
@@ -123,7 +120,7 @@ where
     pub async fn parse_all<'b, E>(
         app: &'t mut App<E, T, P>,
         round: usize,
-        spd: &'static dyn Spider<E, T, P>,
+        spd: &'t dyn Spider<E, T, P>,
         mware: &'t MiddleWare<'b, E, T, P>,
     ) where
         E: Serialize + std::fmt::Debug + Clone + Send,

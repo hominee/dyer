@@ -9,14 +9,13 @@ use crate::component::{Client, Profile, Request, Response, Task};
 use crate::plugin::Spider;
 use crate::plugin::{MiddleWare, PipeLine};
 use futures::future::join_all;
-use log::info;
-use rand::prelude::Rng;
 use serde::{Deserialize, Serialize};
 use signal_hook::flag as signal_flag;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc, Mutex,
 };
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::task;
 
 /// Arguments that control the `App` at runtime, including using history or not,  
@@ -27,6 +26,8 @@ pub struct AppArg {
     pub gap: u64,
     /// gap to forcefully join the spawned task
     pub join_gap: u64,
+    /// gap to forcefully join the spawned task if none of items meeting join_gap
+    pub join_gap_emer: f64,
     /// number that once for a concurrent future poll
     pub round_req: usize,
     /// cache request minimal length
@@ -35,6 +36,8 @@ pub struct AppArg {
     pub round_req_max: usize,
     /// buffer length for the created task.
     pub buf_task_tmp: usize,
+    /// maximal spawned task that cached
+    pub spawn_task_max: usize,
     /// construct req from task one time
     pub round_task: usize,
     /// minimal task(profile) consumed per round
@@ -54,15 +57,17 @@ pub struct AppArg {
     pub rate: Rate,
 }
 
-impl Default for AppArg {
-    fn default() -> Self {
+impl AppArg {
+    fn new() -> Self {
         AppArg {
             gap: 20,
             join_gap: 7,
+            join_gap_emer: 0.1,
             round_req: 10,
             round_req_min: 7,
             round_req_max: 70,
             buf_task_tmp: 10000,
+            spawn_task_max: 100,
             round_task: 100,
             round_task_min: 70,
             round_res: 100,
@@ -79,17 +84,33 @@ impl Default for AppArg {
 /// some infomation about `dyer` at rumtime where speed and error-handler based on
 #[derive(std::fmt::Debug)]
 pub struct Rate {
-    pub alltime: f64,
+    /// all time the app runs
     pub uptime: f64,
-    pub active: bool,
-    pub load: f64,
-    pub low_load: f64,
-    pub err: u64,
-    pub remains: u64,
-    pub low_remains: u64,
-    pub anchor: f64,
+    /// the time that a cycle lasts, backup application history once running out
+    pub cycle: f64,
+    /// time the app runs in each cycle
+    pub cycle_usage: f64,
+    /// consist of many intervals,
+    pub period: f64,
+    /// time used in each period
+    pub period_usage: f64,
+    /// between 0-1, the rate that low mode lasts in each period
+    pub period_threshold: f64,
+    /// a time gap when updating some infomation
     pub interval: f64,
-    pub peroid: f64,
+    /// if false, the app spawns task that multiplied by low_rate in each interval
+    pub active: bool,
+    /// normally the speed that the app spawns tasks in the whole interval
+    pub load: f64,
+    /// failed tasks in each interval
+    pub err: u64,
+    /// remaining jobs to do in each cycle in each interval
+    pub remains: u64,
+    /// the rate applied to limit the requests to be spawned in low mode
+    pub low_rate: f64,
+    /// time anchor at which update some infomation
+    pub anchor: f64,
+    /// vector of gap each request takes to receive response header in each interval  
     pub stamps: Vec<f64>,
 }
 
@@ -98,20 +119,21 @@ impl Rate {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs_f64()
-            + 30.0;
+            .as_secs_f64();
         Rate {
-            alltime: 0.0,
             uptime: 0.0,
+            cycle: 600.0,
+            cycle_usage: 0.0,
             active: true,
             load: 99.0,
-            low_load: 99.0,
             remains: 110,
-            low_remains: 90,
+            low_rate: 0.333,
             err: 0,
-            anchor: now,
+            anchor: now + 30.0,
             interval: 30.0,
-            peroid: 200.0,
+            period: 200.0,
+            period_usage: 0.0,
+            period_threshold: 0.168,
             stamps: Vec::new(),
         }
     }
@@ -122,97 +144,59 @@ impl Rate {
             .unwrap()
             .as_secs_f64();
         if now > self.anchor {
-            self.uptime += self.interval;
+            self.cycle_usage += self.interval;
+            self.period_usage += self.interval;
             self.anchor += self.interval;
-            self.alltime += self.interval;
-            if self.uptime.rem_euclid(self.peroid) <= 0.168 * self.peroid {
-                log::info!("inactive peroid");
+            self.uptime += self.interval;
+            if self.period_usage.rem_euclid(self.period) <= self.period_threshold * self.period {
+                log::debug!("inactive period");
                 self.active = false;
-                self.low_remains = self.low_load as u64;
             } else {
-                log::info!("active peroid");
+                log::debug!("active period");
                 self.active = true;
-                self.uptime = self.uptime.rem_euclid(self.peroid);
-                if self.stamps.len() >= 3 && (self.err as f64) / (self.stamps.len() as f64) <= 0.1 {
-                    let mean: f64 =
-                        self.stamps.iter().map(|t| t).sum::<f64>() / (self.stamps.len() as f64);
-                    let dev = (self.stamps.iter().map(|t| (t - mean).powi(2)).sum::<f64>()
-                        / (self.stamps.len() as f64))
-                        .sqrt();
-                    self.stamps.clear();
-                    if dev / mean <= 0.15 {
-                        let load = (self.load * 0.7 + 0.3 * mean.recip() * self.interval)
-                            .max(3.8 * self.low_load);
-                        log::info!("lantency is stable, load from {} to {}.", self.load, load);
-                        self.load = load;
-                    } else {
-                        let load = (self.load * 0.5 + 0.5 * mean.recip() * self.interval)
-                            .max(3.0 * self.low_load);
-                        log::info!(
-                    "lantency is turbulent, increase the weight of mean, load from {} to {}.",
-                    self.load, load ,
-                );
-                        self.load = load;
-                    }
-                } else if self.stamps.len() >= 150 {
-                    self.stamps.clear();
-                }
-                self.remains = (self.low_load as u64 * 3).max(self.load as u64);
+                self.period_usage = self.period_usage.rem_euclid(self.period);
+                self.stamps.clear();
+                self.remains = self.load as u64;
             }
         }
     }
 
     /// backup the `Task` `Profile` `Request` for some time in case of interupt
     pub fn backup(&mut self) -> bool {
-        if self.alltime >= 600.0 {
-            self.alltime = 0.0;
+        if self.cycle_usage >= self.cycle {
+            self.cycle_usage = self.cycle_usage.rem_euclid(self.cycle);
             return true;
         }
         false
     }
 
     /// decide the length of `Task` to be spawned
-    pub fn get_len(&mut self, tm: Option<u64>) -> usize {
+    pub fn get_len(&mut self, tm: Option<f64>) -> usize {
         let now = match tm {
-            Some(now) => now as f64,
+            Some(now) => now,
             None => std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
                 .as_secs_f64(),
         };
+        let delta = self.load * (self.anchor - now) / self.interval;
+        let len = if self.remains as f64 >= delta + 0.5 && delta >= 0.0 {
+            self.remains as f64 - delta
+        } else if (self.remains as f64) < delta + 0.5 && delta >= 0.0 {
+            self.remains = delta as u64;
+            0.0
+        } else {
+            self.remains as f64
+        };
+        log::debug!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
+        self.remains = self.remains - (len as u64) + 1;
+        if len > 0.0 {
+            log::debug!("only {} tasks are valid by rate control.", len);
+        }
         if self.active {
-            let delta = self.load * (self.anchor - now) / self.interval;
-            let len = if self.remains as f64 >= delta + 0.5 && delta >= 0.0 {
-                self.remains as f64 - delta
-            } else if (self.remains as f64) < delta + 0.5 && delta >= 0.0 {
-                self.remains = delta as u64;
-                0.0
-            } else {
-                self.remains as f64
-            };
-            log::info!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
-            self.remains = self.remains - (len as u64) + 1;
-            log::info!("limit the engine to spawning {} tasks.", len);
             len.ceil() as usize
         } else {
-            let delta = self.low_load * (self.anchor - now) / self.interval;
-            let len = if self.low_remains as f64 >= delta + 0.5 && delta >= 0.0 {
-                self.low_remains as f64 - delta
-            } else if (self.low_remains as f64) < delta + 0.5 && delta >= 0.0 {
-                self.low_remains = delta as u64;
-                0.0
-            } else {
-                self.low_remains as f64
-            };
-            log::info!(
-                "low remains:{}, delta: {}, len: {}",
-                self.low_remains,
-                delta,
-                len
-            );
-            self.low_remains = self.low_remains - (len as u64) + 1;
-            log::info!("limit the engine to spawning {} tasks.", len);
-            len.ceil() as usize
+            (self.low_rate * len).ceil() as usize
         }
     }
 }
@@ -254,7 +238,7 @@ where
             yield_err: Arc::new(Mutex::new(Vec::new())),
             fut_res: Arc::new(Mutex::new(Vec::new())),
             fut_profile: Arc::new(Mutex::new(Vec::new())),
-            rt_args: Arc::new(Mutex::new(AppArg::default())),
+            rt_args: Arc::new(Mutex::new(AppArg::new())),
         }
     }
 
@@ -301,22 +285,33 @@ where
         if len_fut_profile != 0 {
             vs.push(format!("{} Future Profile", len_fut_profile));
         }
-        log::info!("{}", vs.join("\n"));
+        log::info!("{}", vs.join("    "));
     }
 
     /// to see whether to generate `Profile`
     pub fn enough_profile(&self) -> bool {
-        let mut rng = rand::thread_rng();
+        let rd1 = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            * 3000.0)
+            % 1.0;
         let profile_len = self.profile.lock().unwrap().len()
             + self.fut_profile.lock().unwrap().len()
             + self.req.lock().unwrap().len()
             + self.req_tmp.lock().unwrap().len();
         let less = profile_len <= self.rt_args.lock().unwrap().profile_min;
         let profile_max = self.rt_args.lock().unwrap().profile_max;
-        let exceed = !less && profile_len <= profile_max && rng.gen::<f64>() <= 0.333;
+        let exceed = !less && profile_len <= profile_max && rd1 <= 0.333;
         let fut_exceed = profile_len < profile_max;
         let mut emer = false;
-        if profile_len < self.task.lock().unwrap().len() && rng.gen::<f64>() <= 0.01 {
+        let rd2 = (SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+            * 3000.0)
+            % 1.0;
+        if profile_len < self.task.lock().unwrap().len() && rd2 <= 0.01 {
             emer = true;
         }
         (less || exceed) && fut_exceed || emer
@@ -337,9 +332,9 @@ where
             (pipeline.process_item)(&mut self.result).await;
         }
         if self.task_tmp.lock().unwrap().len() >= self.rt_args.lock().unwrap().buf_task_tmp {
-            log::info!("pipeline out buffered task.");
-            let vfiles = self.buf_task("../data/tasks/");
-            let file_name = format!("../data/tasks/{}", 1 + vfiles.last().unwrap_or(&0));
+            log::debug!("pipeline out buffered task.");
+            let vfiles = self.buf_task("data/tasks/");
+            let file_name = format!("data/tasks/{}", 1 + vfiles.last().unwrap_or(&0));
             Task::stored(&file_name, &mut self.task_tmp);
             self.task_tmp.lock().unwrap().clear();
         }
@@ -350,10 +345,10 @@ where
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         let len_req_tmp = self.req_tmp.lock().unwrap().len();
         if len_req_tmp <= self.rt_args.lock().unwrap().round_req_min {
-            log::info!("req_tmp does not contains enough Reqeust, take them from self.req");
+            log::debug!("req_tmp does not contains enough Reqeust, take them from self.req");
             // cached request is not enough
             let len_req = self.req.lock().unwrap().len();
             let mut buf_req = Vec::new();
@@ -379,10 +374,10 @@ where
 
     /// spawn polling `Request` as `tokio::task` and executing asynchronously,
     pub async fn spawn_task(&mut self) {
-        if self.fut_res.lock().unwrap().len() > 50 {
+        if self.fut_res.lock().unwrap().len() > self.rt_args.lock().unwrap().spawn_task_max {
             log::warn!("enough Future Response, spawn no task.");
         } else {
-            log::debug!("take request out to be executed.");
+            log::trace!("take request out to be executed.");
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()
@@ -392,10 +387,12 @@ where
             let mut args = self.rt_args.lock().unwrap();
             let len = args.round_req.min(req_tmp.len());
             let len_load = args.rate.get_len(None).min(len);
-            info!(
-                "spawn {} tokio task to execute Request concurrently",
-                len_load
-            );
+            if len_load > 0 {
+                log::info!(
+                    "spawn {} tokio task to execute Request concurrently",
+                    len_load
+                );
+            }
             if len_load > 0 {
                 vec![0; len_load].iter().for_each(|_| {
                     let req = req_tmp.pop().unwrap();
@@ -431,24 +428,24 @@ where
     /// preparation before closing `Dyer`
     pub async fn close<'b, C>(
         &'a mut self,
-        spd: &'static dyn Spider<Entity, T, P>,
+        spd: &'a dyn Spider<Entity, T, P>,
         middleware: &'a MiddleWare<'b, Entity, T, P>,
         pipeline: &'a PipeLine<'b, Entity, C>,
     ) where
         C: Send + 'b,
     {
         Response::parse_all(self, usize::MAX, spd, middleware).await;
-        info!("sending all of them into Pipeline");
+        log::info!("sending all of them into Pipeline");
         (pipeline.process_yerr)(&mut self.yield_err).await;
         (pipeline.process_item)(&mut self.result).await;
         (pipeline.close_pipeline)().await;
-        log::info!("All work is Done. exit gracefully");
+        log::info!("All work is Done.");
     }
 
     /// drive `Dyer` into running.
     pub async fn run<'b, C>(
         &'a mut self,
-        spd: &'static dyn Spider<Entity, T, P>,
+        spd: &'a dyn Spider<Entity, T, P>,
         middleware: &'a MiddleWare<'b, Entity, T, P>,
         pipeline: PipeLine<'b, Entity, C>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
@@ -469,12 +466,12 @@ where
             self.task.lock().unwrap().extend(tasks);
         } else {
             log::warn!("use the history file.");
-            let reqs: Vec<Request<T, P>> = Request::load("../data/request");
-            let req_tmp: Vec<Request<T, P>> = Request::load("../data/request_tmp");
-            let profile: Vec<Profile<P>> = Profile::load("../data/profile");
-            let vfiles = self.buf_task("../data/tasks/");
+            let reqs: Vec<Request<T, P>> = Request::load("data/request");
+            let req_tmp: Vec<Request<T, P>> = Request::load("data/request_tmp");
+            let profile: Vec<Profile<P>> = Profile::load("data/profile");
+            let vfiles = self.buf_task("data/tasks/");
             if !vfiles.is_empty() {
-                let file = format!("../data/tasks/{}", vfiles[0]);
+                let file = format!("data/tasks/{}", vfiles[0]);
                 let task: Vec<Task<T>> = Task::load(&file);
                 log::info!("{} loaded {} Task.", file, task.len());
                 self.task = Arc::new(Mutex::new(task));
@@ -500,7 +497,7 @@ where
                     // receive the Ctrl+c signal
                     // by default  request  task profile and result yield err are going to stroed into
                     // file
-                    info!("receive Ctrl+c signal, preparing ...");
+                    log::info!("receive Ctrl+c signal, preparing ...");
 
                     //finish remaining futures
                     let mut futs = Vec::new();
@@ -515,13 +512,13 @@ where
                             }
                         }
                         join_all(v).await;
-                        info!("join 7 future response ");
+                        log::debug!("join 7 future response ");
                     }
-                    info!("join all future response to be executed");
+                    log::trace!("join all future response to be executed");
 
                     // dispath them
                     self.close(spd, middleware, &pipeline).await;
-                    info!("executing close_spider...");
+                    log::info!("executing close_spider...");
                     spd.close_spider(self);
                     break;
                 }
@@ -536,9 +533,9 @@ where
                         && self.fut_profile.lock().unwrap().is_empty()
                         && self.res.lock().unwrap().is_empty()
                     {
-                        info!("all work is done.");
+                        log::info!("all work is done.");
                         self.close(spd, middleware, &pipeline).await;
-                        info!("executing close_spider...");
+                        log::info!("executing close_spider...");
                         spd.close_spider(self);
                         break;
                     }
@@ -552,9 +549,11 @@ where
 
                     // before we construct request check profile first
                     if self.enough_profile() {
-                        info!("profile length too few or not exceeding max, generate Profile");
+                        log::debug!(
+                            "profile length too few or not exceeding max, generate Profile"
+                        );
                         let pfile = self.profile.clone();
-                        info!("spawn {} tokio task to generate Profile concurrently", 3);
+                        log::info!("spawn {} tokio task to generate Profile concurrently", 3);
                         let f = spd.entry_profile();
                         let johp = task::spawn(async move {
                             Profile::exec_all::<Entity, T>(pfile, 3usize, f).await;
@@ -567,14 +566,13 @@ where
                     if self.rt_args.lock().unwrap().round_task_min > len_p && len_p != 0 {
                         // not enough profile to construct request
                         // await the spawned task done
-                        info!("count for profiles length if not more than round_task_min");
+                        log::debug!("count for profiles length if not more than round_task_min");
                         let (_, jh) = self.fut_profile.lock().unwrap().pop().unwrap();
                         jh.await.unwrap();
                     }
 
                     // parse response
                     //extract the parseResult
-                    info!("parsing Response ...");
                     let round_res = self.rt_args.lock().unwrap().round_res;
                     Response::parse_all(self, round_res, spd, middleware).await;
 
@@ -583,14 +581,14 @@ where
 
                     // if task is running out, load them from nex buf_task
                     if self.task.lock().unwrap().is_empty() {
-                        let vfiles = self.buf_task("../data/tasks/");
+                        let vfiles = self.buf_task("data/tasks/");
                         if !vfiles.is_empty() {
-                            let file = format!("../data/tasks/{}", vfiles[0]);
+                            let file = format!("data/tasks/{}", vfiles[0]);
                             log::warn!("remove used task in {}", file);
                             std::fs::remove_file(&file).unwrap();
                         }
                         if vfiles.len() <= 1 {
-                            log::info!("no task buffer file found. use task_tmp");
+                            log::debug!("no task buffer file found. use task_tmp");
                             let mut task_tmp = Vec::new();
                             let mut tmp = self.task_tmp.lock().unwrap();
                             for _ in 0..tmp.len() {
@@ -600,7 +598,7 @@ where
                             drop(tmp);
                             self.task.lock().unwrap().extend(task_tmp);
                         } else if vfiles.len() >= 2 {
-                            let file_new = format!("../data/tasks/{}", vfiles[1]);
+                            let file_new = format!("data/tasks/{}", vfiles[1]);
                             log::info!("load new task in {}", file_new);
                             let tsks = Task::load(&file_new);
                             self.task.lock().unwrap().extend(tsks);
@@ -611,7 +609,6 @@ where
                     let len_t = self.task.lock().unwrap().len();
                     let len_p = self.profile.lock().unwrap().len();
                     if len_t != 0 && len_p != 0 {
-                        info!("generate Request");
                         //let gen_request = spd.get_parser(MethodIndex::GenRequest);
                         let round_task = self.rt_args.lock().unwrap().round_task;
                         let reqs =
@@ -620,19 +617,25 @@ where
                     }
 
                     //join the older tokio-task
-                    info!("join the older tokio task.");
                     let join_gap = self.rt_args.lock().unwrap().join_gap;
-                    Client::watch(self.fut_res.clone(), self.fut_profile.clone(), join_gap).await;
+                    let join_gap_emer = self.rt_args.lock().unwrap().join_gap_emer;
+                    Client::watch(
+                        self.fut_res.clone(),
+                        self.fut_profile.clone(),
+                        join_gap,
+                        join_gap_emer,
+                    )
+                    .await;
                     self.rt_args.lock().unwrap().rate.update();
                     if self.rt_args.lock().unwrap().rate.backup() {
                         self.close(spd, middleware, &pipeline).await;
 
                         log::info!("backup history...");
-                        Profile::stored("../data/profile", &self.profile);
-                        Task::stored("../data/task", &self.task);
-                        Task::stored("../data/task_tmp", &self.task_tmp);
-                        Request::stored("../data/request", &self.req);
-                        Request::stored("../data/request_tmp", &self.req_tmp);
+                        Profile::stored("data/profile", &mut self.profile);
+                        Task::stored("data/task", &mut self.task);
+                        Task::stored("data/task_tmp", &mut self.task_tmp);
+                        Request::stored("data/request", &mut self.req);
+                        Request::stored("data/request_tmp", &mut self.req_tmp);
                     }
                     //self.info();
                     //std::thread::sleep(std::time::Duration::from_millis(150));

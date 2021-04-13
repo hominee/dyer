@@ -8,7 +8,6 @@ use futures::{executor::block_on, future::join_all, Future};
 use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
@@ -241,7 +240,7 @@ impl Client {
                 Some(r) => futs.push(Client::exec(r, None)),
                 None => {
                     rs.remove(0);
-                    error!("cannot init Request into hyper::Request");
+                    log::error!("cannot init Request into hyper::Request");
                 }
             }
         }
@@ -274,9 +273,10 @@ impl Client {
     pub async fn watch(
         res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
         pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
-        threshold: u64,
+        threshold_tokio_task: u64,
+        threshold_half_join_task: f64,
     ) {
-        log::info!("future response length: {}", res.lock().unwrap().len());
+        log::debug!("future response length: {}", res.lock().unwrap().len());
         let mut ind_r: Vec<usize> = Vec::new();
         let mut handle_r = Vec::new();
         let mut j = 0usize;
@@ -285,12 +285,12 @@ impl Client {
             .unwrap()
             .as_secs_f64();
         res.lock().unwrap().iter().enumerate().for_each(|(ind, r)| {
-            if now - r.0 as f64 >= threshold as f64 {
+            if now - r.0 as f64 >= threshold_tokio_task as f64 {
                 ind_r.push(ind - j);
                 j += 1;
             }
         });
-        log::info!("availible response length: {}", ind_r.len());
+        log::debug!("availible response length: {}", ind_r.len());
         ind_r.into_iter().for_each(|ind| {
             let (_, handle) = res.lock().unwrap().remove(ind);
             handle_r.push(handle)
@@ -302,7 +302,7 @@ impl Client {
             let mut nr = Vec::new();
             for _ in 0..mlen {
                 let (tic, handle) = res.lock().unwrap().remove(0);
-                if now - tic as f64 >= 2.718 {
+                if now - tic as f64 >= threshold_half_join_task {
                     handle_r.push(handle)
                 } else {
                     nr.push((tic, handle));
@@ -312,11 +312,14 @@ impl Client {
                 res.lock().unwrap().insert(0, r);
             }
         }
-        info!(
-            "joining {} response out of {} for Response.",
-            handle_r.len(),
-            res.lock().unwrap().len()
-        );
+        let handle_r_len = handle_r.len();
+        if handle_r_len > 0 {
+            log::info!(
+                "joining {} response out of {} for Response.",
+                handle_r_len,
+                res.lock().unwrap().len() + handle_r_len
+            );
+        }
 
         let mut ind_p: Vec<usize> = Vec::new();
         let mut j = 0;
@@ -326,12 +329,14 @@ impl Client {
             .iter()
             .enumerate()
             .for_each(|(ind, r)| {
-                if now - r.0 as f64 >= threshold as f64 {
+                if now - r.0 as f64 >= threshold_tokio_task as f64 {
                     ind_p.push(ind - j);
                     j += 1;
                 }
             });
-        info!("joining {} response for Profile.", j);
+        if j > 0 {
+            log::info!("joining {} response for Profile.", j);
+        }
         ind_p.into_iter().for_each(|ind| {
             let (_, handle) = pfile.lock().unwrap().remove(ind);
             handle_r.push(handle)

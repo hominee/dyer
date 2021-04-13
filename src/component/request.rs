@@ -1,4 +1,4 @@
-extern crate bytes;
+//extern crate bytes;
 extern crate hyper;
 extern crate hyper_tls;
 extern crate serde;
@@ -7,7 +7,6 @@ extern crate serde_json;
 use crate::component::{Profile, Task};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
-use log::debug;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::fs;
@@ -28,7 +27,7 @@ where
 {
     pub task: Task<T>,
     pub profile: Profile<P>,
-    pub able: u64,
+    pub able: f64,
     pub headers: Option<std::collections::HashMap<String, String>>,
 }
 unsafe impl<T, P> Send for Request<T, P>
@@ -54,7 +53,7 @@ where
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         //split them into two parts
         let mut ind = Vec::new();
         let mut ndy = Vec::new();
@@ -71,14 +70,14 @@ where
             }
         }
 
-        debug!("all {} request are going to created.", j);
+        log::debug!("all {} request are going to created.", j);
         ind.into_iter().for_each(|index| {
             let p = profile.lock().unwrap().remove(index);
             let task = tasks.lock().unwrap().remove(0);
             let mut req = Request::default();
             req.from_task(task);
             req.from_profile(p);
-            debug!("generate 1 request: {:?}", req);
+            log::trace!("generate 1 request: {:?}", req);
             if &req.task.parser == "" {
                 panic!("generate request failer missing parser : {:?}", req);
             }
@@ -169,7 +168,7 @@ where
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         Request::<T, P> {
             task: Task::default(),
             profile: Profile::default(),
@@ -185,7 +184,7 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     /// store unfinished or extra `Request`s,
-    pub fn stored(path: &str, reqs: &Arc<Mutex<Vec<Request<T, P>>>>) {
+    pub fn stored(path: &str, reqs: &mut Arc<Mutex<Vec<Request<T, P>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -193,10 +192,10 @@ where
             .open(path)
             .unwrap();
         let mut buf = Vec::new();
-        reqs.lock().unwrap().iter().for_each(|req| {
+        while let Some(req) = reqs.lock().unwrap().pop() {
             let s = serde_json::to_string(&req).unwrap();
             buf.push(s);
-        });
+        }
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 

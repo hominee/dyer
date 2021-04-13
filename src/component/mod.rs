@@ -3,15 +3,19 @@ pub mod profile;
 pub mod request;
 pub mod response;
 pub mod task;
-//pub mod useragent;
 pub mod utils;
 
+#[doc(hidden)]
 pub use client::Client;
+#[doc(hidden)]
 pub use profile::Profile;
+#[doc(hidden)]
 pub use request::Request;
+#[doc(hidden)]
 pub use response::{ParseResult, Response};
+#[doc(hidden)]
 pub use task::Task;
-//pub use useragent::UserAgent;
+#[doc(hidden)]
 pub use utils::get_cookie;
 
 use std::error::Error;
@@ -37,8 +41,8 @@ impl std::fmt::Display for ParseError {
         write!(f, "Parse Error.")
     }
 }
-
 impl Error for ParseError {}
+
 #[derive(Debug)]
 pub struct ReqError {
     pub desc: String,

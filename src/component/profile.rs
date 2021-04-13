@@ -5,10 +5,9 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 
-use crate::component::{utils, Client, Request, ResError, Response};
+use crate::component::{utils, Client, ResError, Response};
+use crate::plugin::ProfileInfo;
 use futures::future::join_all;
-use futures::future::BoxFuture;
-use log::{error, info};
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 use std::io::Write;
@@ -26,9 +25,9 @@ where
     /// cookie set by server or user
     pub cookie: HashMap<String, String>,
     /// checkpoint by which this `Profile` is valid for `Request`
-    pub able: u64,
+    pub able: f64,
     /// meta data that the `Profile` is created
-    pub created: u64,
+    pub created: f64,
     /// additional arguments for extensive application
     pub pargs: Option<P>,
 }
@@ -59,14 +58,7 @@ where
     pub async fn exec_all<'a, E, T>(
         profiles: Arc<Mutex<Vec<Profile<P>>>>,
         num: usize,
-        f: (
-            Request<T, P>,
-            Option<
-                &(dyn Fn(Response<T, P>) -> BoxFuture<'a, Result<Profile<P>, ResError>>
-                      + Send
-                      + Sync),
-            >,
-        ),
+        f: ProfileInfo<'a, T, P>,
     ) where
         T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
         P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
@@ -76,9 +68,9 @@ where
         let mut vreq = Vec::new();
         for _ in 0..num {
             // construct a new reqeust
-            let p = Response::default(Some(&f.0));
+            let p = Response::default(Some(&f.req));
             rs.push(p);
-            if let Some(t) = f.0.clone().init() {
+            if let Some(t) = f.req.clone().init() {
                 log::trace!("Request that to generate Profile: {:?}", t);
                 vreq.push(Client::exec(t, Some(false)));
             }
@@ -93,11 +85,11 @@ where
                 Ok(res) => {
                     p.headers.extend(res.1);
                     p.status = res.2;
-                    if f.1.is_none() {
+                    if f.parser.is_none() {
                         let profile = Profile::exec(&mut p).unwrap();
                         pfiles.push(profile);
                     } else {
-                        match (f.1.unwrap())(p).await {
+                        match (f.parser.unwrap())(p).await {
                             Ok(profile) => pfiles.push(profile),
                             Err(_) => {}
                         }
@@ -110,9 +102,9 @@ where
         }
         profiles.lock().unwrap().extend(pfiles);
         if i == 0 {
-            error!("get {} Profiles out of {}", i, num);
+            log::error!("get {} Profiles out of {}", i, num);
         } else {
-            info!("get {} Profiles out of {}", i, num);
+            log::info!("get {} Profiles out of {}", i, num);
         }
     }
 }
@@ -122,7 +114,7 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     /// store unfinished or extra `Profile`s,
-    pub fn stored(path: &str, profiles: &Arc<Mutex<Vec<Profile<P>>>>) {
+    pub fn stored(path: &str, profiles: &mut Arc<Mutex<Vec<Profile<P>>>>) {
         let mut file = fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -130,10 +122,10 @@ where
             .open(path)
             .unwrap();
         let mut buf = Vec::new();
-        profiles.lock().unwrap().iter().for_each(|r| {
+        while let Some(r) = profiles.lock().unwrap().pop() {
             let s = serde_json::to_string(&r).unwrap();
             buf.push(s);
-        });
+        }
         file.write(buf.join("\n").as_bytes()).unwrap();
     }
 
@@ -165,7 +157,7 @@ where
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs();
+            .as_secs_f64();
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
             "accept".to_string(),
