@@ -1,0 +1,20 @@
+// Middleware that processes the data before reaching PipeLine
+// including dealing with errors, data structures, runtime modification
+
+use crate::entity::{Entities, Parg, Targ};
+use dyer::{plug, MiddleWare};
+
+// there are 7 methods availible:
+//     1. hand_profile
+//     2. hand_task
+//     3. hand_req
+//     4. hand_res
+//     5. hand_item
+//     6. hand_err
+//     7. hand_yerr
+// you can specify some of them if necessary, others are assigned as default
+// More details in https://docs.rs/dyer/plugin/middleware/struct.MiddleWare.html
+
+pub fn get_middleware<'md>() -> MiddleWare<'md, Entities, Targ, Parg> {
+    plug!(MiddleWare < Entities, Targ, Parg > {})
+}
