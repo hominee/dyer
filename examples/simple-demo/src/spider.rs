@@ -42,6 +42,8 @@ impl Spider<Entities, Targ, Parg> for MySpider {
     //parser is indexed by a `String` name, like:
     //task.parser = "parse_quote".to_string();
     fn get_parser<'a>(&self, ind: String) -> Option<&'a Btem<Entities, Targ, Parg>> {
+        // specify the parser here, like:
+        // plug!(get_parser(<+input-string-as-index+>; <+parse_func_0+>, <parse_func_1>, ...))
         plug!(get_parser(ind; parse_quote))
     }
 

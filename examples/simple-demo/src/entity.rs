@@ -15,7 +15,6 @@ pub struct Quote {
 #[derive(Serialize, Debug, Clone)]
 pub enum Entities {
     Quote(Quote),
-    //Item1(Item1),
 }
 
 // serve as a appendix/complement to dyer::Task

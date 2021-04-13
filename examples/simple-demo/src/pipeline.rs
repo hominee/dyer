@@ -33,7 +33,7 @@ async fn open_file(path: &str) -> &'static Option<std::fs::File> {
         &VAL
     }
 }
-// store Items into file
+// store Entities into file
 async fn store_item(items: &mut Arc<Mutex<Vec<Entities>>>) {
     let mut ser_items = Vec::new();
     while let Some(Entities::Quote(item)) = items.lock().unwrap().pop() {

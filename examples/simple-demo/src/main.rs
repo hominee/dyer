@@ -26,7 +26,7 @@ async fn main() {
         //.with_module_level("dyer", log::LevelFilter::Debug) // log level varied from modules
         .init()
         .unwrap();
-    static SPD: MySpider = MySpider {};
+    let spd: MySpider = MySpider {};
     // initialize the middleware
     let middleware = get_middleware();
     // initialize the pipeline
@@ -37,7 +37,7 @@ async fn main() {
     // rate control, history file usage, app load balance and so on
     // more details see https://docs.rs/dyer/engine/struct.AppArg.html
     app.rt_args.lock().unwrap().skip_history = true;
-    app.run(&SPD, &middleware, pipeline).await.unwrap();
+    app.run(&spd, &middleware, pipeline).await.unwrap();
 }
 
 // As you expected, It is Done.
