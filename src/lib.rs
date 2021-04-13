@@ -11,9 +11,10 @@
 //! proper architecture may set up yourself in a dilemma when efficiency and learning cost are taken
 //! into consideration. `dyer` offers high-level,flexible wrappers and APIs what does a lot for you.    
 //!
-//! **Get Started** by looking over the [examples].
+//! **Get Started** by installing [dyer-cli] and looking over the [examples].
 //!
-//! [dyer]: https://docs.rs/dyer
+//! [dyer]: https://github.com/HomelyGuy/dyer
+//! [dyer-cli]: https://github.com/HomelyGuy/dyer-cli
 //! [tokio]: https://docs.rs/tokio
 //! [scrapy]: https://scrapy.org
 //! [Rust programming language]: https://www.rust-lang.org

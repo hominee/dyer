@@ -11,13 +11,14 @@ the rest of it.
 proper architecture may set up yourself in a dilemma when efficiency and learning cost are taken
 into consideration. `dyer` offers high-level,flexible wrappers and APIs what does a lot for you.    
 
-**Get started** by looking over the [examples].
+**Get started** by installing [dyer-cli] and looking over the [examples].
 
 [dyer]: https://docs.rs/dyer
 [tokio]: https://docs.rs/tokio
 [scrapy]: https://scrapy.org
 [Rust programming language]: https://www.rust-lang.org
 [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
+[dyer-cli]: https://github.com/HomelyGuy/dyer-cli
 
 # Main Functionalities
 
@@ -42,7 +43,7 @@ Each [Task] and each [Profile] is scheduled with some gap, has a time stamp for 
 only the expired can be feeded to engine of `dyer`. Nevertheless `dyer` will limit the
 [Request] sent to poll, the [Profile] to make, [Task] to load or store and so on [see `AppArg`].
 
-[see `AppArg`]: https://docs.rs/dyer/engine/struct.AppArg.html
-[Task]: https://docs.rs/dyer/component/task/struct.Task.html
-[Profile]: https://docs.rs/dyer/component/profile/struct.Profile.html
-[Request]: https://docs.rs/dyer/component/request/struct.Request.html
+[see `AppArg`]: https://docs.rs/dyer/1.1.1/dyer/engine/struct.AppArg.html
+[Task]: https://docs.rs/dyer/1.1.1/dyer/component/task/struct.Task.html
+[Profile]: https://docs.rs/dyer/1.1.1/dyer/component/profile/struct.Profile.html
+[Request]: https://docs.rs/dyer/1.1.1/dyer/component/request/struct.Request.html
