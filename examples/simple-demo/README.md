@@ -5,7 +5,7 @@
 
 ## Instruction
 
-This is a template created by [dyer-cli], as the [Scrapy tutorial] does, in scraping the quotes of site in quotes.toscrape.com to know about the basic of [dyer] and some useful tips.
+This is a demo based on template created by [dyer-cli], as the [Scrapy tutorial] does, in scraping the quotes of site in quotes.toscrape.com to know about the basic of [dyer] and some useful tips.
 [dyer-cli] is a recommanded tool to guide you use [dyer] fast and at ease, helps you build a robust crawler, data processor, netwrok program fast and correctly.
 
 Well, enjoy!
