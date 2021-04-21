@@ -1,7 +1,9 @@
 /target
-C:Userscaptainvimfilessessionsdefault.vim
+*.vim
 Cargo.lock
 data/
 log/
 src/.* 
 */*.swp
+*.json
+*/*.json

@@ -410,19 +410,19 @@ where
 
     /// load cached `Task` from caced directory
     pub fn buf_task(&self, path: &str) -> Vec<usize> {
-        let mut vfiles = std::fs::read_dir(path)
-            .unwrap()
-            .map(|name| {
-                name.unwrap()
+        let mut file_indexs: Vec<usize> = Vec::new();
+        if let Ok(vfiles) = std::fs::read_dir(path) {
+            vfiles.for_each(|name| {
+                let index = name.unwrap()
                     .file_name()
                     .to_str()
                     .unwrap()
                     .parse::<usize>()
-                    .unwrap()
-            })
-            .collect::<Vec<usize>>();
-        vfiles.sort();
-        vfiles
+                    .unwrap();
+                file_indexs.push(index);
+            });
+        } 
+        file_indexs
     }
 
     /// preparation before closing `Dyer`
