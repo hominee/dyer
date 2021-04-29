@@ -60,21 +60,21 @@ pub struct AppArg {
 impl AppArg {
     fn new() -> Self {
         AppArg {
-            gap: 20,
+            gap: 15,
             join_gap: 7,
             join_gap_emer: 0.1,
             round_req: 10,
-            round_req_min: 7,
+            round_req_min: 3,
             round_req_max: 70,
             buf_task_tmp: 10000,
             spawn_task_max: 100,
-            round_task: 100,
-            round_task_min: 70,
-            round_res: 100,
-            profile_min: 1000,
-            profile_max: 5000,
-            round_yield_err: 100,
-            round_result: 100,
+            round_task: 10,
+            round_task_min: 7,
+            round_res: 10,
+            profile_min: 10,
+            profile_max: 50,
+            round_yield_err: 10,
+            round_result: 10,
             skip_history: true,
             rate: Rate::new(),
         }
@@ -202,7 +202,7 @@ impl Rate {
 }
 
 /// An abstraction and collection of data flow of `Dyer`,  
-pub struct App<Entity, T, P>
+pub struct App<E, T, P>
 where
     T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
@@ -213,18 +213,18 @@ where
     pub req: Arc<Mutex<Vec<Request<T, P>>>>,
     pub req_tmp: Arc<Mutex<Vec<Request<T, P>>>>,
     pub res: Arc<Mutex<Vec<Response<T, P>>>>,
-    pub result: Arc<Mutex<Vec<Entity>>>,
+    pub result: Arc<Mutex<Vec<E>>>,
     pub yield_err: Arc<Mutex<Vec<String>>>,
     pub fut_res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
     pub fut_profile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
     pub rt_args: Arc<Mutex<AppArg>>,
 }
 
-impl<'a, Entity, T, P> App<Entity, T, P>
+impl<'a, E, T, P> App<E, T, P>
 where
     T: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
     P: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
-    Entity: Serialize + std::fmt::Debug + Clone + Send + Sync,
+    E: Serialize + std::fmt::Debug + Clone + Send + Sync,
 {
     pub fn new() -> Self {
         App {
@@ -318,7 +318,7 @@ where
     }
 
     /// drive and consume extracted Entity into `PipeLine`
-    pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, Entity, C>)
+    pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, E, C>)
     where
         C: Send + 'a,
     {
@@ -341,7 +341,7 @@ where
     }
 
     /// load and balance `Request`
-    pub async fn update_req(&mut self, middleware: &MiddleWare<'a, Entity, T, P>) {
+    pub async fn update_req(&mut self, middleware: &MiddleWare<'a, E, T, P>) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -413,7 +413,8 @@ where
         let mut file_indexs: Vec<usize> = Vec::new();
         if let Ok(vfiles) = std::fs::read_dir(path) {
             vfiles.for_each(|name| {
-                let index = name.unwrap()
+                let index = name
+                    .unwrap()
                     .file_name()
                     .to_str()
                     .unwrap()
@@ -421,16 +422,16 @@ where
                     .unwrap();
                 file_indexs.push(index);
             });
-        } 
+        }
         file_indexs
     }
 
     /// preparation before closing `Dyer`
     pub async fn close<'b, C>(
         &'a mut self,
-        spd: &'a dyn Spider<Entity, T, P>,
-        middleware: &'a MiddleWare<'b, Entity, T, P>,
-        pipeline: &'a PipeLine<'b, Entity, C>,
+        spd: &'a dyn Spider<E, T, P>,
+        middleware: &'a MiddleWare<'b, E, T, P>,
+        pipeline: &'a PipeLine<'b, E, C>,
     ) where
         C: Send + 'b,
     {
@@ -445,9 +446,9 @@ where
     /// drive `Dyer` into running.
     pub async fn run<'b, C>(
         &'a mut self,
-        spd: &'a dyn Spider<Entity, T, P>,
-        middleware: &'a MiddleWare<'b, Entity, T, P>,
-        pipeline: PipeLine<'b, Entity, C>,
+        spd: &'a dyn Spider<E, T, P>,
+        middleware: &'a MiddleWare<'b, E, T, P>,
+        pipeline: PipeLine<'b, E, C>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
         C: Send + 'a,
@@ -461,7 +462,7 @@ where
         //skip the history and start new fields to staart with, some Profile required
         if self.rt_args.lock().unwrap().skip_history {
             log::warn!("skipped the history.");
-            Profile::exec_all::<Entity, T>(self.profile.clone(), 3usize, spd.entry_profile()).await;
+            Profile::exec_all::<E, T>(self.profile.clone(), 3usize, spd.entry_profile()).await;
             let tasks = spd.entry_task().unwrap();
             self.task.lock().unwrap().extend(tasks);
         } else {
@@ -556,7 +557,7 @@ where
                         log::info!("spawn {} tokio task to generate Profile concurrently", 3);
                         let f = spd.entry_profile();
                         let johp = task::spawn(async move {
-                            Profile::exec_all::<Entity, T>(pfile, 3usize, f).await;
+                            Profile::exec_all::<E, T>(pfile, 3usize, f).await;
                         });
                         self.fut_profile.lock().unwrap().push((now, johp));
                     }
@@ -567,7 +568,7 @@ where
                         // not enough profile to construct request
                         // await the spawned task done
                         log::debug!("count for profiles length if not more than round_task_min");
-                        let (_, jh) = self.fut_profile.lock().unwrap().pop().unwrap();
+                        let (_, jh) = self.fut_profile.lock().unwrap().remove(0);
                         jh.await.unwrap();
                     }
 

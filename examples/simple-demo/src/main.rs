@@ -37,6 +37,7 @@ async fn main() {
     // rate control, history file usage, app load balance and so on
     // more details see https://docs.rs/dyer/engine/struct.AppArg.html
     app.rt_args.lock().unwrap().skip_history = true;
+    app.rt_args.lock().unwrap().profile_min = 5;
     app.run(&spd, &middleware, pipeline).await.unwrap();
 }
 
