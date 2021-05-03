@@ -37,10 +37,10 @@ async fn open_file(path: &str) -> &'static Option<std::fs::File> {
 async fn store_item(items: &mut Arc<Mutex<Vec<Entities>>>) {
     let mut ser_items = Vec::new();
     while let Some(Entities::Quote(item)) = items.lock().unwrap().pop() {
-        let s = to_json::to_string(&item).unwrap();
+        let s = to_json::to_string(&item).unwrap() + "\n";
         ser_items.push(s);
     }
-    let stream = ser_items.join("\n");
+    let stream = ser_items.join("");
     let mut writer = LineWriter::new(open_file("result.json").await.as_ref().unwrap());
     writer.write(&stream.as_bytes()).unwrap();
 }

@@ -69,19 +69,23 @@ where
         log::error!("response error: {}, uri: {}", res.status, res.task.uri);
         if res.task.trys >= 1 {
             let yield_err = format!(
-                "status: {}\turi: {}\tcontent: {}",
+                "status: {}\turi: {}\tcontent: {}\n",
                 &res.status,
                 &res.task.uri,
                 res.content.as_ref().unwrap_or(&"".to_string())
             );
             log::error!("this task fails 3+ times. drop it.");
-            profiles.push(res.profile);
+            if let Some(profile) = res.profile {
+                profiles.push(profile);
+            }
             yerrs.push(yield_err);
         } else {
             log::error!("{} times failure, reuse this task.", res.task.trys);
             res.task.trys += 1;
             tasks.push(res.task);
-            profiles.push(res.profile);
+            if let Some(profile) = res.profile {
+                profiles.push(profile);
+            }
         }
     }
     _app.task.lock().unwrap().extend(tasks);

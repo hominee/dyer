@@ -26,7 +26,7 @@ where
     P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
     pub task: Task<T>,
-    pub profile: Profile<P>,
+    pub profile: Option<Profile<P>>,
     pub able: f64,
     pub headers: Option<std::collections::HashMap<String, String>>,
 }
@@ -49,40 +49,59 @@ where
         profile: Arc<Mutex<Vec<Profile<P>>>>,
         tasks: Arc<Mutex<Vec<Task<T>>>>,
         round: usize,
+        use_profile: bool,
     ) -> Vec<Request<T, P>> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs_f64();
         //split them into two parts
-        let mut ind = Vec::new();
         let mut ndy = Vec::new();
         let mut j = 0;
+        let mut ind = Vec::new();
+        let len_task = tasks.lock().unwrap().len();
 
-        let len_p = profile.lock().unwrap().len();
-        let len_t = tasks.lock().unwrap().len();
-        let len = len_t.min(len_p);
-        for i in 0..round.min(len) {
-            let p = &profile.lock().unwrap()[i];
-            if p.able <= now {
-                ind.push(i - j);
-                j += 1;
+        if use_profile {
+            let len_profile = profile.lock().unwrap().len();
+            let len = len_task.min(len_profile);
+            for i in 0..round.min(len) {
+                let p = &profile.lock().unwrap()[i];
+                if p.able <= now {
+                    ind.push(i - j);
+                    j += 1;
+                }
             }
+
+            log::debug!("creating {} request", j);
+            ind.into_iter().for_each(|index| {
+                let p = profile.lock().unwrap().remove(index);
+                let task = tasks.lock().unwrap().remove(0);
+                let mut req = Request::default();
+                req.from_task(task);
+                req.from_profile(p);
+                log::trace!("generate 1 request: {:?}", req);
+                // generate request failer missing parser
+                assert!(!&req.task.parser.is_empty());
+                ndy.push(req);
+            });
+        } else {
+            for i in 0..round.min(len_task) {
+                let task = &tasks.lock().unwrap()[i];
+                if task.able <= now {
+                    ind.push(i - j);
+                    j += 1;
+                }
+            }
+            ind.into_iter().for_each(|index| {
+                let task = tasks.lock().unwrap().remove(index);
+                let mut req = Request::<T, P>::default();
+                req.from_task(task);
+                log::trace!("generate 1 request: {:?}", req);
+                // generate request failer missing parser
+                assert!(!&req.task.parser.is_empty());
+                ndy.push(req);
+            });
         }
-
-        log::debug!("all {} request are going to created.", j);
-        ind.into_iter().for_each(|index| {
-            let p = profile.lock().unwrap().remove(index);
-            let task = tasks.lock().unwrap().remove(0);
-            let mut req = Request::default();
-            req.from_task(task);
-            req.from_profile(p);
-            log::trace!("generate 1 request: {:?}", req);
-            if &req.task.parser == "" {
-                panic!("generate request failer missing parser : {:?}", req);
-            }
-            ndy.push(req);
-        });
         ndy
     }
 }
@@ -99,17 +118,29 @@ where
         let headers = builder.headers_mut().unwrap();
         let cookie: String;
         // initialize cookie
-        let cookies = self.profile.cookie;
-        let mut v: Vec<String> = Vec::new();
-        cookies.iter().for_each(|(key, value)| {
-            v.push(format!("{}={}", key, value));
-        });
-        cookie = v.join("; ");
+        if let Some(Profile {
+            cookie: cookies,
+            headers: phead,
+            ..
+        }) = self.profile
+        {
+            let mut v: Vec<String> = Vec::new();
+            cookies.iter().for_each(|(key, value)| {
+                v.push(format!("{}={}", key, value));
+            });
+            cookie = v.join("; ");
+            headers.insert(
+                HeaderName::from_str("cookie").unwrap(),
+                HeaderValue::from_str(&cookie).unwrap(),
+            );
+            phead.iter().for_each(|(k, v)| {
+                headers.insert(
+                    HeaderName::from_str(k.as_str()).unwrap(),
+                    HeaderValue::from_str(v.as_str()).unwrap(),
+                );
+            });
+        }
 
-        headers.insert(
-            HeaderName::from_str("cookie").unwrap(),
-            HeaderValue::from_str(&cookie).unwrap(),
-        );
         if let Some(head) = self.headers.as_ref() {
             head.iter().for_each(|(k, v)| {
                 headers.insert(
@@ -120,13 +151,6 @@ where
         }
         let thead = self.task.headers;
         thead.iter().for_each(|(k, v)| {
-            headers.insert(
-                HeaderName::from_str(k.as_str()).unwrap(),
-                HeaderValue::from_str(v.as_str()).unwrap(),
-            );
-        });
-        let phead = self.profile.headers;
-        phead.iter().for_each(|(k, v)| {
             headers.insert(
                 HeaderName::from_str(k.as_str()).unwrap(),
                 HeaderValue::from_str(v.as_str()).unwrap(),
@@ -171,7 +195,7 @@ where
             .as_secs_f64();
         Request::<T, P> {
             task: Task::default(),
-            profile: Profile::default(),
+            profile: None,
             headers: None,
             able: now,
         }
@@ -230,7 +254,7 @@ where
         if self.able < profile.able {
             self.able = profile.able;
         }
-        self.profile = profile;
+        self.profile = Some(profile);
     }
 
     /// construct `Request` from `Task`

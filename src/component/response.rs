@@ -71,7 +71,7 @@ where
     /// `Task` that make this `Response`
     pub task: Task<T>,
     /// `Profile` that make this `Response`
-    pub profile: Profile<P>,
+    pub profile: Option<Profile<P>>,
     /// status code returned by the server
     pub status: usize,
     /// the content of this `Request`
@@ -105,10 +105,7 @@ where
     where
         E: Serialize + std::fmt::Debug + Clone + Send,
     {
-        log::debug!(
-            "recycle profile, successful Response: uri: {}",
-            &res.task.uri
-        );
+        log::info!( "successful requested: {}", &res.task.uri);
         let ind = (&res.task.parser).to_string();
         let parser = spd
             .get_parser(ind)
@@ -186,13 +183,21 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     pub fn default(req: Option<&Request<T, P>>) -> Response<T, P> {
-        let r = match req {
-            Some(r) => r.clone(),
-            None => Request::default(),
-        };
+        let task;
+        let profile;
+        match req {
+            Some(r) => {
+                task = r.task.clone();
+                profile = r.profile.clone();
+            }
+            None => {
+                task = Task::default();
+                profile = None;
+            }
+        }
         Response {
-            task: r.task,
-            profile: r.profile,
+            task: task,
+            profile: profile,
             msg: None,
             content: None,
             headers: std::collections::HashMap::new(),

@@ -2,7 +2,7 @@ extern crate brotli2;
 extern crate flate2;
 
 use crate::component::{Request, ResError, Response};
-use crate::engine::AppArg;
+use crate::engine::ArgRate;
 use bytes::buf::ext::BufExt;
 use futures::{executor::block_on, future::join_all, Future};
 use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex, Once};
 use std::{time, time::UNIX_EPOCH};
-use tokio::task;
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 
@@ -224,7 +223,7 @@ impl Client {
     pub async fn exec_all<T, P>(
         mut reqs: Vec<Request<T, P>>,
         result: Arc<Mutex<Vec<Response<T, P>>>>,
-        args: Arc<Mutex<AppArg>>,
+        rate: Arc<Mutex<ArgRate>>,
     ) where
         T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
@@ -256,92 +255,16 @@ impl Client {
                     r.headers = da.1;
                     r.status = da.2;
                     ress.push(r);
-                    args.lock().unwrap().rate.stamps.push(da.3);
+                    rate.lock().unwrap().stamps.push(da.3);
                 }
                 Err(e) => {
                     r.msg = Some(e.desc);
-                    args.lock().unwrap().rate.err += 1;
+                    rate.lock().unwrap().err += 1;
                     ress.push(r);
                 }
             }
         }
         result.lock().unwrap().extend(ress);
-    }
-
-    ///join spawned tokio-task, once it exceed the timing `threshold`, then forcefully join
-    ///it watch
-    pub async fn watch(
-        res: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
-        pfile: Arc<Mutex<Vec<(u64, task::JoinHandle<()>)>>>,
-        threshold_tokio_task: u64,
-        threshold_half_join_task: f64,
-    ) {
-        log::debug!("future response length: {}", res.lock().unwrap().len());
-        let mut ind_r: Vec<usize> = Vec::new();
-        let mut handle_r = Vec::new();
-        let mut j = 0usize;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-        res.lock().unwrap().iter().enumerate().for_each(|(ind, r)| {
-            if now - r.0 as f64 >= threshold_tokio_task as f64 {
-                ind_r.push(ind - j);
-                j += 1;
-            }
-        });
-        log::debug!("availible response length: {}", ind_r.len());
-        ind_r.into_iter().for_each(|ind| {
-            let (_, handle) = res.lock().unwrap().remove(ind);
-            handle_r.push(handle)
-        });
-        // no non-out-of-schedule response attained, join the first one instead
-        if handle_r.is_empty() && !res.lock().unwrap().is_empty() {
-            let len = res.lock().unwrap().len();
-            let mlen = len.min(3);
-            let mut nr = Vec::new();
-            for _ in 0..mlen {
-                let (tic, handle) = res.lock().unwrap().remove(0);
-                if now - tic as f64 >= threshold_half_join_task {
-                    handle_r.push(handle)
-                } else {
-                    nr.push((tic, handle));
-                }
-            }
-            while let Some(r) = nr.pop() {
-                res.lock().unwrap().insert(0, r);
-            }
-        }
-        let handle_r_len = handle_r.len();
-        if handle_r_len > 0 {
-            log::info!(
-                "joining {} response out of {} for Response.",
-                handle_r_len,
-                res.lock().unwrap().len() + handle_r_len
-            );
-        }
-
-        let mut ind_p: Vec<usize> = Vec::new();
-        let mut j = 0;
-        pfile
-            .lock()
-            .unwrap()
-            .iter()
-            .enumerate()
-            .for_each(|(ind, r)| {
-                if now - r.0 as f64 >= threshold_tokio_task as f64 {
-                    ind_p.push(ind - j);
-                    j += 1;
-                }
-            });
-        if j > 0 {
-            log::info!("joining {} response for Profile.", j);
-        }
-        ind_p.into_iter().for_each(|ind| {
-            let (_, handle) = pfile.lock().unwrap().remove(ind);
-            handle_r.push(handle)
-        });
-        join_all(handle_r).await;
     }
 
     /// wrapper of futures::future::join_all

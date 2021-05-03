@@ -7,7 +7,7 @@ extern crate serde;
 extern crate simple_logger;
 extern crate tokio;
 
-use dyer::{log, plug, to_json, App, FutureExt, ProfileInfo};
+use dyer::{log, plug, to_json, App, FutureExt, ProfileInfo, ArgProfile};
 use dyer::{MiddleWare, ParseResult, PipeLine, Request, Response, Spider, Task};
 use serde::{Deserialize, Serialize};
 use simple_logger::SimpleLogger;
@@ -44,7 +44,7 @@ pub struct Parg {}
 // "https://github.com/utkarshkukreti/select.rs" is recommanded to explore
 pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Parg> {
     let mut r = ParseResult::default();
-    r.profile.push(res.profile);
+    //r.profile.push(res.profile.unwrap());
     if res.content.is_none() {
         // for the `Response` with empty content, recycle profile
         return r;
@@ -157,10 +157,10 @@ async fn open_file(path: &str) -> &'static Option<std::fs::File> {
 async fn store_item(items: &mut Arc<Mutex<Vec<Entities>>>) {
     let mut ser_items = Vec::new();
     while let Some(Entities::Quote(item)) = items.lock().unwrap().pop() {
-        let s = to_json::to_string(&item).unwrap();
+        let s = to_json::to_string(&item).unwrap() + "\n";
         ser_items.push(s);
     }
-    let stream = ser_items.join("\n");
+    let stream = ser_items.join("");
     let mut writer = LineWriter::new(open_file("result.json").await.as_ref().unwrap());
     writer.write(&stream.as_bytes()).unwrap();
 }
@@ -185,8 +185,15 @@ async fn main() {
     );
     // construct the app and start the crawler
     let mut app: App<Entities, Targ, Parg> = App::<Entities, Targ, Parg>::new();
+    // profile configuration, use profile or not, if use min and max range
+    // arg_profile is none as default
+    let mut arg_profile = ArgProfile::new();
+    arg_profile.is_on = true;
+    arg_profile.profile_max = 7;
+    arg_profile.profile_min = 3;
+    app.args.arg_profile = Some( arg_profile );
     // donot use history, such as `Request`, `Profile`, `Task`
-    app.rt_args.lock().unwrap().skip_history = true;
+    app.args.skip_history = true;
     app.run(&spd, &middleware, pipeline).await.unwrap();
 }
 

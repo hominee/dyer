@@ -39,18 +39,19 @@ where
 {
     /// default method used to extract `Profile` from a `Response`, collecting all cookie by
     /// `set-cookie` and ignoring others.
-    pub fn exec<T>(res: &mut Response<T, P>) -> Result<Profile<P>, ResError>
+    pub fn exec<T>(res: Response<T, P>) -> Result<Profile<P>, ResError>
     where
         T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
     {
+        let mut profile = res.profile.unwrap_or(Profile::default());
         let raw_headers = &res.headers;
         let mut cookie = HashMap::new();
         if let Some(data) = raw_headers.get("set-cookie") {
             cookie = utils::get_cookie(data);
         };
-        res.profile.cookie = cookie;
-        res.content = Some("".to_string());
-        Ok(res.profile.clone())
+        profile.cookie = cookie;
+        //res.content = Some("".to_string());
+        Ok(profile)
     }
 
     /// generate multiple `Profile` and put them into `App`
@@ -86,7 +87,7 @@ where
                     p.headers.extend(res.1);
                     p.status = res.2;
                     if f.parser.is_none() {
-                        let profile = Profile::exec(&mut p).unwrap();
+                        let profile = Profile::exec(p).unwrap();
                         pfiles.push(profile);
                     } else {
                         match (f.parser.unwrap())(p).await {
@@ -102,9 +103,9 @@ where
         }
         profiles.lock().unwrap().extend(pfiles);
         if i == 0 {
-            log::error!("get {} Profiles out of {}", i, num);
+            log::error!("get {} / {} Profiles", i, num);
         } else {
-            log::info!("get {} Profiles out of {}", i, num);
+            log::info!("get {} / {} Profiles ", i, num);
         }
     }
 }

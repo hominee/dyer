@@ -27,9 +27,9 @@ building a crawer, web service and data processing. Nevertheless, it can tackle 
 
 ## Real-browser Customization
 
-For each feeded [Task], `dyer` will fake a [Profile] and combines them into a [Request] to
-satisfy the requirement of the target site. By means of powerful `ffi` interface of and web
-assemble of rust, intergration is not hard.
+It is disabled by default, but As you wish you can enable it by specifying [`ArgProfile`]. In general, for each feeded [Task], `dyer` will fake a [Profile] and combines them into a [Request] to
+meet the requirement of the target site. By means of [ `ffi` ] interface of and web
+assemble of rust, combination with javascript or python script may do you a favor hopefully. 
 
 ## Signal Handling
 
@@ -41,9 +41,11 @@ reliable. `dyer` will backup your history between certain gap, resumption is at 
 
 Each [Task] and each [Profile] is scheduled with some gap, has a time stamp for validation,
 only the expired can be feeded to engine of `dyer`. Nevertheless `dyer` will limit the
-[Request] sent to poll, the [Profile] to make, [Task] to load or store and so on [see `AppArg`].
+[Request] sent to poll, the [Profile] to make, [Task] to load or store and so on [see `ArgApp`].
 
-[see `AppArg`]: https://docs.rs/dyer/1.1.1/dyer/engine/struct.AppArg.html
+[see `ArgApp`]: https://docs.rs/dyer/1.1.1/dyer/engine/struct.ArgApp.html
 [Task]: https://docs.rs/dyer/1.1.1/dyer/component/task/struct.Task.html
 [Profile]: https://docs.rs/dyer/1.1.1/dyer/component/profile/struct.Profile.html
+[`ArgProfile`]: https://docs.rs/dyer/1.1.1/dyer/engine/arg/struct.ArgProfile.html
 [Request]: https://docs.rs/dyer/1.1.1/dyer/component/request/struct.Request.html
+[`ffi`]: https://doc.rust-lang.org/nomicon/ffi.html

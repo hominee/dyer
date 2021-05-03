@@ -6,7 +6,7 @@ use dyer::{ParseResult, Response, Task};
 
 pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Parg> {
     let mut r = ParseResult::default();
-    r.profile.push(res.profile);
+    //r.profile.push(res.profile);
     if res.content.is_none() {
         // for the `Response` with empty content, recycle profile
         return r;

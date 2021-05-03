@@ -26,9 +26,9 @@
 //!
 //! ## Real-browser Customization
 //!
-//! For each feeded [Task], `dyer` will fake a [Profile] and combines them into a [Request] to
-//! satisfy the requirement of the target site. By means of powerful `ffi` interface of and web
-//! assemble of rust, intergration is not hard.
+//! It is disabled by default, but As you wish you can enable it by specifying [`ArgProfile`]. In general, for each feeded [Task], `dyer` will fake a [Profile] and combines them into a [Request] to
+//! meet the requirement of the target site. By means of [`ffi`] interface of and web
+//! assemble of rust, combination with javascript or python script may do you a favor hopefully. 
 //!
 //! ## Signal Handling
 //!
@@ -40,12 +40,14 @@
 //!
 //! Each [Task] and each [Profile] is scheduled with some gap, has a time stamp for validation,
 //! only the expired can be feeded to engine of `dyer`. Nevertheless `dyer` will limit the
-//! [Request] sent to poll, the [Profile] to make, [Task] to load or store and so on [see `AppArg`].
+//! [Request] sent to poll, the [Profile] to make, [Task] to load or store and so on [see `ArgApp`].
 //!
-//! [see `AppArg`]: crate::engine::AppArg
+//! [see `ArgApp`]: crate::engine::ArgApp
 //! [Task]: crate::component::Task
 //! [Profile]: crate::component::Profile
+//! [`ArgProfile`]: crate::engine::ArgProfile
 //! [Request]: crate::component::Request
+//! [`ffi`]: https://doc.rust-lang.org/nomicon/ffi.html
 //!
 //! # Quick Start
 //!
@@ -98,11 +100,17 @@
 //!
 //! # Features to be added
 //!
-//! * proxy support
-//! * debugging support(not bad though for now)
-//! * more signal support(Ctrl+c for now)
-//! * autothrottling and more customized plugins support
-//! * more to go
+//! ✅ Profile customization
+//!
+//! ⬜️ proxy support
+//!
+//! ⬜️ debugging support(not bad though for now)
+//!
+//! ⬜️ more signal support(Ctrl+c for now)
+//!
+//! ⬜️  autothrottling and more customized plugins support
+//!
+//! ⬜️  more to go
 //!
 //! # Problem And Feedback
 //!
@@ -125,7 +133,7 @@ pub use component::{
     get_cookie, Client, ParseError, ParseResult, Profile, Request, ResError, Response, Task,
 };
 #[doc(hidden)]
-pub use engine::{App, AppArg};
+pub use engine::{App, ArgApp, ArgRate, ArgProfile};
 #[doc(hidden)]
 pub use plugin::{MiddleWare, PipeLine, ProfileInfo, Spider};
 
