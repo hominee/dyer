@@ -28,7 +28,7 @@
 //!
 //! It is disabled by default, but As you wish you can enable it by specifying [`ArgProfile`]. In general, for each feeded [Task], `dyer` will fake a [Profile] and combines them into a [Request] to
 //! meet the requirement of the target site. By means of [`ffi`] interface of and web
-//! assemble of rust, combination with javascript or python script may do you a favor hopefully. 
+//! assemble of rust, combination with javascript or python script may do you a favor hopefully.
 //!
 //! ## Signal Handling
 //!
@@ -81,7 +81,6 @@
 //!     |___src/parser.rs
 //!     |___src/spider.rs
 //!     |___src/middleware.rs
-//!     |___src/main.rs
 //!     |___src/pipeline.rs
 //! ```    
 //! Main functionality of each file:
@@ -90,11 +89,31 @@
 //! * the `spider.rs` contains initial when opening and final things to do when closing
 //! * the `middleware.rs` contains Some middlewares that process data at runtime
 //! * the `pipeline.rs` contains entities manipulation including data-storage, displsying and so on
-//! * the `main.rs` combines all modules then build them up into a programm
 //! * `Cargo.toml` is the basic configuration of the project
 //! * `README.md` contains some instructions of the project
 //! * `data` folder balance the app load when data in app exceeds, and backup app data at certain
 //! gap
+//!
+//! Then it is your show time, basically there are simple example items(`function` `enum` `struct`)
+//! in each file you can follow. After that check your code
+//! ```bash
+//! dyer-cli check
+//! ```
+//! if you run it the first time, dyer-cli will download the crates and then check the code. Some
+//! of you may notice that there is no `main.rs` here. Yes, you're right, but `dyer-cli` will
+//! generate it for you which you need not worry about. 
+//! if some warning happens such as `unused import` or `dead code` the command does a lot for you:
+//! ```bash
+//! dyer-cli fix
+//! ```
+//! however it won't help if some errors occur, if so, you have to debug the code manually.
+//! make config file in the root directory
+//! the file contains fomw configuration of `ArgApp` the will update periodically, more details see
+//! [examples]
+//! When the program compiles, haha run it:
+//! ```bash
+//! dyer-cli run
+//! ```
 //!
 //! It is believed that learning by example is the best, and some [examples] are provided to illustrate how to use.
 //!
@@ -102,15 +121,17 @@
 //!
 //! ✅ Profile customization
 //!
-//! ⬜️ proxy support
+//! ✅ Periodic configuration update
 //!
-//! ⬜️ debugging support(not bad though for now)
+//! ⬜️ Proxy support
 //!
-//! ⬜️ more signal support(Ctrl+c for now)
+//! ⬜️ Debugging support(not bad though for now)
 //!
-//! ⬜️  autothrottling and more customized plugins support
+//! ⬜️ More signal support(Ctrl+c for now)
 //!
-//! ⬜️  more to go
+//! ⬜️  Autothrottling and more customized plugins support
+//!
+//! ⬜️  More to go
 //!
 //! # Problem And Feedback
 //!
@@ -122,6 +143,8 @@
 //! [**dyer-cli**]: https://crates.io/crates/dyer-cli
 //! [my github]: https://github.com/HomelyGuy
 
+//#![feature(proc_macro_hygiene)]
+
 pub mod component;
 pub mod engine;
 pub mod plugin;
@@ -130,10 +153,10 @@ pub mod plugin;
 pub use component::{client, profile, request, response, task, utils};
 #[doc(hidden)]
 pub use component::{
-    get_cookie, Client, ParseError, ParseResult, Profile, Request, ResError, Response, Task,
+    get_cookie, Client, ParseError, ProfileError, TaskError, ReqError, ParseResult, Profile, Request, ResError, Response, Task,
 };
 #[doc(hidden)]
-pub use engine::{App, ArgApp, ArgRate, ArgProfile};
+pub use engine::{App, ArgApp, ArgProfile, ArgRate};
 #[doc(hidden)]
 pub use plugin::{MiddleWare, PipeLine, ProfileInfo, Spider};
 
@@ -141,5 +164,7 @@ pub use plugin::{MiddleWare, PipeLine, ProfileInfo, Spider};
 pub use futures::future::{BoxFuture, FutureExt};
 #[doc(hidden)]
 pub use log;
+#[doc(hidden)]
+pub use macros;
 #[doc(hidden)]
 pub use serde_json as to_json;

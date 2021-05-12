@@ -4,7 +4,7 @@ extern crate hyper_tls;
 extern crate serde;
 extern crate serde_json;
 
-use crate::component::{Profile, Task};
+use crate::component::{Profile, Task, utils};
 use hyper::header::{HeaderName, HeaderValue};
 use hyper::{Body as hBody, Request as hRequest};
 use serde::{Deserialize, Serialize};
@@ -42,6 +42,16 @@ where
     T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
 {
+    pub fn new() -> Request<T, P> {
+        let now =utils::now();
+        Request::<T, P> {
+            task: Task::new(),
+            profile: None,
+            headers: None,
+            able: now,
+        }
+    }
+
     /// based on the length of both profiles and tasks
     /// to restrict the gen size of request
     /// the num should be provided
@@ -51,10 +61,7 @@ where
         round: usize,
         use_profile: bool,
     ) -> Vec<Request<T, P>> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        let now = utils::now();
         //split them into two parts
         let mut ndy = Vec::new();
         let mut j = 0;
@@ -76,7 +83,7 @@ where
             ind.into_iter().for_each(|index| {
                 let p = profile.lock().unwrap().remove(index);
                 let task = tasks.lock().unwrap().remove(0);
-                let mut req = Request::default();
+                let mut req = Request::<T,P>::new();
                 req.from_task(task);
                 req.from_profile(p);
                 log::trace!("generate 1 request: {:?}", req);
@@ -94,7 +101,7 @@ where
             }
             ind.into_iter().for_each(|index| {
                 let task = tasks.lock().unwrap().remove(index);
-                let mut req = Request::<T, P>::default();
+                let mut req = Request::<T, P>::new();
                 req.from_task(task);
                 log::trace!("generate 1 request: {:?}", req);
                 // generate request failer missing parser
@@ -183,24 +190,6 @@ where
     }
 }
 
-impl<T, P> Default for Request<T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
-{
-    fn default() -> Request<T, P> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-        Request::<T, P> {
-            task: Task::default(),
-            profile: None,
-            headers: None,
-            able: now,
-        }
-    }
-}
 
 impl<T, P> Request<T, P>
 where

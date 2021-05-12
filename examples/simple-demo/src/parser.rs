@@ -43,7 +43,7 @@ pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Par
             .unwrap()
             .attr("href")
             .unwrap();
-        let mut task = Task::<Targ>::default();
+        let mut task = Task::<Targ>::new();
         task.uri = format!("https://quotes.toscrape.com{}", next_url);
         task.parser = "parse_quote".to_string();
         r.task.push(task);

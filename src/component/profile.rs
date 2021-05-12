@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io::{BufRead, BufReader};
 
-use crate::component::{utils, Client, ResError, Response};
+use crate::component::{utils,ProfileError, Client, ResError, Response};
 use crate::plugin::ProfileInfo;
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
@@ -54,14 +54,52 @@ where
         Ok(profile)
     }
 
+
+    /// generate one `Profile` 
+    pub async fn exec_one<'a, E, T>( f: ProfileInfo<'a, T, P>,) -> Result<Profile<P>, ProfileError> 
+    where
+        T: Serialize + for<'de> Deserialize<'de> + Debug + Clone + Send,
+        P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
+        E: Serialize + std::fmt::Debug + Clone,
+    {
+            // construct a new reqeust
+            let mut p = Response::new(Some(f.req.as_ref().unwrap()));
+            if let Some(t) = f.req.clone().unwrap().init() {
+                log::trace!("Request that to generate Profile: {:?}", t);
+                let result = Client::exec(t, Some(false)).await;
+                match result {
+                    Ok(res) => {
+                        p.headers.extend(res.1);
+                        p.status = res.2;
+                        if f.parser.is_none() {
+                            let profile = Profile::exec(p).unwrap();
+                            Ok(profile)
+                        } else {
+                            match (f.parser.unwrap())(p).await {
+                                Ok(profile) => {
+                                    log::trace!("gen profile: {:?}", profile);
+                                    Ok(profile)
+                                },
+                                Err(_) => {
+                                    Err(ProfileError{desc: "the parser of ProfileInfo cannot extract profile from the response".into()})
+                                }
+                            }
+                        }
+                    }
+                    Err(_) => { Err( ProfileError{desc: "the parser of ProfileInfo cannot extract profile from the response".into()} ) }
+                }
+            }else {
+                 Err( ProfileError{desc: "req of ProfileInfo cannot init into a hyper::Request".into()} ) 
+            }
+    }
+
     /// generate multiple `Profile` and put them into `App`
-    /// for different uri, different generator functions are required.
     pub async fn exec_all<'a, E, T>(
         profiles: Arc<Mutex<Vec<Profile<P>>>>,
         num: usize,
         f: ProfileInfo<'a, T, P>,
     ) where
-        T: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
+        T: Serialize + for<'de> Deserialize<'de> + Debug + Clone + Send,
         P: Serialize + for<'de> Deserialize<'de> + Debug + Clone,
         E: Serialize + std::fmt::Debug + Clone,
     {
@@ -69,9 +107,9 @@ where
         let mut vreq = Vec::new();
         for _ in 0..num {
             // construct a new reqeust
-            let p = Response::default(Some(&f.req));
+            let p = Response::new(Some(f.req.as_ref().unwrap()));
             rs.push(p);
-            if let Some(t) = f.req.clone().init() {
+            if let Some(t) = f.req.clone().unwrap().init() {
                 log::trace!("Request that to generate Profile: {:?}", t);
                 vreq.push(Client::exec(t, Some(false)));
             }
@@ -101,10 +139,10 @@ where
                 Err(_) => {}
             }
         }
-        profiles.lock().unwrap().extend(pfiles);
         if i == 0 {
             log::error!("get {} / {} Profiles", i, num);
         } else {
+            profiles.lock().unwrap().extend(pfiles);
             log::info!("get {} / {} Profiles ", i, num);
         }
     }
@@ -155,10 +193,7 @@ where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
     fn default() -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        let now = utils::now();
         let mut headers: HashMap<String, String> = HashMap::new();
         headers.insert(
             "accept".to_string(),

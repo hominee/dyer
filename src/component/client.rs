@@ -1,7 +1,7 @@
 extern crate brotli2;
 extern crate flate2;
 
-use crate::component::{Request, ResError, Response};
+use crate::component::{Request, ResError, Response, utils};
 use crate::engine::ArgRate;
 use bytes::buf::ext::BufExt;
 use futures::{executor::block_on, future::join_all, Future};
@@ -12,7 +12,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 use std::sync::{Arc, Mutex, Once};
-use std::{time, time::UNIX_EPOCH};
 
 pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 
@@ -52,10 +51,10 @@ impl Client {
     /// of your code, cz it will slow your whole program down.
     pub async fn request<T, P>(req: Request<T, P>) -> Response<T, P>
     where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     {
-        let mut r = Response::default(Some(&req));
+        let mut r = Response::new(Some(&req));
         match req.init() {
             None => r,
             Some(request) => match Client::exec(request, None).await {
@@ -81,16 +80,10 @@ impl Client {
         args: Option<bool>,
     ) -> Result<(Option<String>, HashMap<String, String>, usize, f64), ResError> {
         let client = &Client::new(7, 23, 7).as_ref().unwrap();
-        let tic = time::SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        let tic = utils::now();
         match client.request(req).await {
             Ok(response) => {
-                let toc = time::SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap()
-                    .as_secs_f64();
+                let toc = utils::now();
                 let gap = toc - tic;
                 match args {
                     Some(true) | None => {
@@ -196,36 +189,36 @@ impl Client {
     }
 
     /// execute only one `Request` for common use.
-    pub async fn exec_one<T, P>(req: Request<T, P>) -> Result<Response<T, P>, ResError>
+    pub async fn exec_one<T, P>(req: Request<T, P>) -> ( Response<T, P>, f64 )
     where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     {
-        let mut r = Response::default(Some(&req));
+        let mut r = Response::new(Some(&req));
         let request = req.init().unwrap();
         let response = Client::exec(request, None).await;
 
         match response {
             Ok(data) => {
-                r.headers.extend(data.1);
                 r.content = data.0;
+                r.headers.extend(data.1);
                 r.status = data.2;
+                (r, data.3)
             }
             Err(e) => {
                 r.msg = Some(e.desc);
+                ( r, f64::NAN )
             }
         }
-        Ok(r)
     }
 
-    // FIXME it's not necessary to return Result, Vec<> will be fine.
     /// execute multiple `Request` for common use.
     pub async fn exec_all<T, P>(
         mut reqs: Vec<Request<T, P>>,
         result: Arc<Mutex<Vec<Response<T, P>>>>,
         rate: Arc<Mutex<ArgRate>>,
     ) where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
         P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     {
         let mut rs = Vec::new();
@@ -234,7 +227,7 @@ impl Client {
         let len_reqs = reqs.len();
         for _ in 0..len_reqs {
             let req = reqs.pop().unwrap();
-            rs.push(Response::default(Some(&req)));
+            rs.push(Response::new(Some(&req)));
             match req.init() {
                 Some(r) => futs.push(Client::exec(r, None)),
                 None => {
@@ -244,7 +237,7 @@ impl Client {
             }
         }
 
-        let mut res = join_all(futs).await;
+        let mut res = Client::join_all(futs).await;
         let len_rs = rs.len();
         for _ in 0..len_rs {
             let mut r = rs.pop().unwrap();

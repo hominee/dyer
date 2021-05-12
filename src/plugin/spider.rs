@@ -13,7 +13,7 @@ where
     T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
     P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
 {
-    pub req: Request<T, P>,
+    pub req: Option<Request<T, P>>,
     pub parser: Option<&'b (dyn Fn(Response<T, P>) -> Bitem<'b, P> + Send + Sync)>,
 }
 
@@ -22,10 +22,15 @@ where
 /// generating `Task`, preparation before opening spider, affairs before closing spider.  
 pub trait Spider<U, T, P>: Send + Sync
 where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+    T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
+    P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
     U: Serialize + std::fmt::Debug + Clone,
 {
+    /// create a instance
+    fn new() -> Self
+    where
+        Self: Sized;
+
     /// method to generate `Profile` throughout the whole program
     fn entry_profile<'a>(&self) -> ProfileInfo<'a, T, P>;
 
@@ -39,5 +44,5 @@ where
     fn close_spider(&self, app: &mut App<U, T, P>);
 
     /// obtain parse throght ind
-    fn get_parser<'a>(&self, ind: String) -> Option<Parse<'a, U, T, P>>;
+    fn get_parser<'a>(&self, ind: &str) -> Option<Parse<'a, U, T, P>>;
 }
