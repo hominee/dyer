@@ -12,9 +12,9 @@ mod parser;
 mod pipeline;
 mod spider;
 
-use dyer::{log, App};
+use dyer::{log, App, Spider};
 use entity::*;
-use middleware::get_middleware;
+use middleware::make_middleware;
 use pipeline::get_pipeline;
 use spider::MySpider;
 
@@ -26,9 +26,9 @@ async fn main() {
         //.with_module_level("dyer", log::LevelFilter::Debug) // log level varied from modules
         .init()
         .unwrap();
-    let spd: MySpider = MySpider {};
+    let spd: MySpider = MySpider::new();
     // initialize the middleware
-    let middleware = get_middleware();
+    let middleware = make_middleware();
     // initialize the pipeline
     let pipeline = get_pipeline();
     // construct the app and start the crawler

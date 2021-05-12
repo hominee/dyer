@@ -1,10 +1,10 @@
 [package]
 name = "dyer"
-version = "1.1.3"
+version = "1.2.0"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
-keywords = ["crawler", "spider", "web-crawling", "web-framework", "scrapy"]
+keywords = ["asynchronous", "crawler", "spider", "web-crawling", "web-framework", "scrapy"]
 categories = ["network-programming", "web-programming"]
 description = " Dyer is designed for reliable, flexible and fast web-crawling, providing some high-level, comprehensive  features without compromising speed.  By means of event-driven, non-blocking I/O tokio and powerful, reliable Rust programming language."
 homepage = "https://crates.io/crates/dyer"
@@ -28,14 +28,12 @@ flate2 = "1.0.20"
 bytes = "0.5.6"
 signal-hook = "0.1.17"
 log = "0.4.13"
+macros = {path = "macros/"}
 
 [dev-dependencies]
 select = "0.5.0"
 simple_logger = "1.11.0"
 
-[[example]]
-name = "customized-demo"
-path = "examples/customized-demo/src/main.rs"
 [[example]]
 name = "simple-demo"
 path = "examples/simple-demo/src/main.rs"

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 
 /// some utilities that useful and convenience for dealing with data flow.
 
@@ -28,3 +29,25 @@ pub fn get_cookie(data: &str) -> HashMap<String, String> {
     });
     cookie
 }
+
+pub fn now() -> f64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs_f64()
+    
+}
+
+
+///generate hash 
+pub(crate) fn hash<I>(salt: I) -> u64
+where 
+    I: std::iter::IntoIterator,
+    I::Item: Hash,
+{
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    salt.into_iter().for_each(|ele| ele.hash(&mut hasher));
+     hasher.finish()
+    
+}
+

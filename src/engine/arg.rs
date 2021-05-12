@@ -1,15 +1,15 @@
+use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
 
 /// Arguments that control the `App` at runtime, including using history or not,  
 /// `Task` `Profile` `Request` `Response` `Entity` consuming and generating
 /// There shall be an introduction to every member(maybe coming soon).
+#[derive(std::fmt::Debug)]
 pub struct ArgApp {
     /// time tap added to created Tasks or Profiles
-    pub gap: u64,
+    pub gap: f64,
     /// gap to forcefully join the spawned task
-    pub join_gap: u64,
-    /// gap to forcefully join the spawned task if none of items meeting join_gap
-    pub join_gap_emer: f64,
+    pub join_gap: f64,
     /// number that once for a concurrent future poll
     pub round_req: usize,
     /// cache request minimal length
@@ -29,7 +29,9 @@ pub struct ArgApp {
     ///consume yield_err once upon a time
     pub round_yield_err: usize,
     ///consume Entity once upon a time
-    pub round_result: usize,
+    pub round_entity: usize,
+    /// use files in directory `data/` or not,
+    /// set true as default
     pub skip_history: bool,
     /// control the task speed runtime
     pub rate: Arc<Mutex<ArgRate>>,
@@ -37,6 +39,358 @@ pub struct ArgApp {
     pub arg_profile: Option<ArgProfile>,
     /// directory that store history file
     pub data_dir: String,
+}
+
+impl ArgApp {
+    /// create an instance of `ArgApp`
+    pub fn new() -> Self {
+        let mut arg = ArgApp {
+            gap: 10.0,
+            join_gap: 7.0,
+            round_req: 10,
+            round_req_min: 3,
+            round_req_max: 70,
+            buf_task_tmp: 10000,
+            spawn_task_max: 100,
+            round_task: 10,
+            round_task_min: 7,
+            round_res: 10,
+            round_yield_err: 10,
+            round_entity: 10,
+            skip_history: true,
+            rate: Arc::new(Mutex::new(ArgRate::new())),
+            arg_profile: None,
+            data_dir: "data/".into(),
+        };
+        arg.parse_config(None, false);
+        arg
+    }
+
+    /// set key-value pairs in `ArgApp`
+    fn set(&mut self, key: &str, value: &str, fail_safe: bool) {
+        match key {
+            "gap" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.gap = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for gap: {}", value);
+                }else {
+                    panic!("update failed, invalid value for gap: {}", value);
+                }
+            }
+            "join_gap" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.join_gap = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for join_gap: {}", value);
+                }else {
+                    panic!("update failed, invalid value for join_gap: {}", value);
+                }
+                
+            }
+            "round_req" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_req = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_req: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_req: {}", value);
+                }
+            }
+            "round_req_min" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_req_min = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_req_min: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_req_min: {}", value);
+                }
+            }
+            "round_req_max" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_req_max = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_req_max: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_req_max: {}", value);
+                }
+            }
+            "buf_task_tmp" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.buf_task_tmp = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for buf_task_tmp: {}", value);
+                }else {
+                    panic!("update failed, invalid value for buf_task_tmp: {}", value);
+                }
+            }
+            "spawn_task_max" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.spawn_task_max = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for spawn_task_max: {}", value);
+                }else {
+                    panic!("update failed, invalid value for spawn_task_max: {}", value);
+                }
+            }
+            "round_task" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_task = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_task: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_task: {}", value);
+                }
+            }
+            "round_task_min" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_task_min = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_task_min: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_task_min: {}", value);
+                }
+            }
+            "round_res" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_res = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_res: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_res: {}", value);
+                }
+            }
+            "round_yield_err" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_yield_err = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_yield_err: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_yield_err: {}", value);
+                }
+            }
+            "round_entity" => {
+                if let Ok(v) = value.parse::<usize>() {
+                    self.round_entity = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for round_entity: {}", value);
+                }else {
+                    panic!("update failed, invalid value for round_entity: {}", value);
+                }
+            }
+            "skip_history" => {
+                if let Ok(v) = value.parse::<bool>() {
+                    self.skip_history = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for skip_history: {}", value);
+                }else {
+                    panic!("update failed, invalid value for skip_history: {}", value);
+                }
+            }
+            "data_dir" => {
+                if let Ok(v) = value.parse::<String>() {
+                    self.data_dir = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for data_dir: {}", value);
+                }else {
+                    panic!("update failed, invalid value for data_dir: {}", value);
+                }
+            }
+            "rate.cycle" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().cycle = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.cycle: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.cycle: {}", value);
+                }
+            }
+            "rate.cycle_usage" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().cycle_usage = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.cycle_usage: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.cycle_usage: {}", value);
+                }
+            }
+            "rate.period_threshold" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().period_threshold = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.period_threshold: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.period_threshold: {}", value);
+                }
+            }
+            "rate.interval" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().interval = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.interval: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.interval: {}", value);
+                }
+            }
+            "rate.load" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().load = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.load: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.load: {}", value);
+                }
+            }
+            "rate.remains" => {
+                if let Ok(v) = value.parse::<u64>() {
+                    self.rate.lock().unwrap().remains = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.remains: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.remains: {}", value);
+                }
+            }
+            "rate.rate_low" => {
+                if let Ok(v) = value.parse::<f64>() {
+                    self.rate.lock().unwrap().rate_low = v;
+                }else if fail_safe {
+                    log::error!("update failed, invalid value for rate.rate_low: {}", value);
+                }else {
+                    panic!("update failed, invalid value for rate.rate_low: {}", value);
+                }
+            }
+            "arg_profile.is_on" => {
+                if self.arg_profile.is_some() {
+                    if let Ok(v) = value.parse::<bool>() {
+                        self.arg_profile.as_mut().unwrap().is_on = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.is_on: {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.is_on: {}", value);
+                    }
+                } else {
+                    let mut arg = ArgProfile::new();
+                    if let Ok(v) = value.parse::<bool>() {
+                        arg.is_on = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.is_on: {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.is_on: {}", value);
+                    }
+                    self.arg_profile = Some(arg);
+                }
+            }
+            "arg_profile.profile_min" => {
+                if self.arg_profile.is_some() {
+                    if let Ok(v) = value.parse::<usize>() {
+                        self.arg_profile.as_mut().unwrap().profile_min = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.profile_min: {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.profile_in: {}", value);
+                    }
+                } else {
+                    let mut arg = ArgProfile::new();
+                    if let Ok(v) = value.parse::<usize>() {
+                        arg.profile_min = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.profile_min: {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.profile_in: {}", value);
+                    }
+                    self.arg_profile = Some(arg);
+                }
+            }
+            "arg_profile.profile_max" => {
+                if self.arg_profile.is_some() {
+                    if let Ok(v) = value.parse::<usize>() {
+                        self.arg_profile.as_mut().unwrap().profile_max = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.profile_max : {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.profile_max: {}", value);
+                    }
+                } else {
+                    let mut arg = ArgProfile::new();
+                    if let Ok(v) = value.parse::<usize>() {
+                        arg.profile_max = v;
+                    }else if fail_safe {
+                        log::error!("update failed, invalid value for arg_profile.profile_max : {}", value);
+                    }else {
+                        panic!("update failed, invalid value for arg_profile.profile_max: {}", value);
+                    }
+                    self.arg_profile = Some(arg);
+                }
+            }
+            _ => {
+                eprintln!("Unrecognizable or unnecessary variable: {}", key);
+            }
+        }
+    }
+
+    /// parse the config file and update the `ArgApp`
+    /// not fail safe for the first time call in `ArgApp::new`
+    /// fail safe after that
+    pub fn parse_config(&mut self, path: Option<&str>, fail_safe: bool) {
+        let fields = [
+            "arg_profile.is_on",
+            "arg_profile.profile_min",
+            "arg_profile.profile_max",
+            "rate.cycle",
+            "rate.cycle_usage",
+            "rate.period_threshold",
+            "rate.interval",
+            "rate.load",
+            "rate.remains",
+            "rate.rate_low",
+            "data_dir",
+            "skip_history",
+            "gap",
+            "join_gap",
+            "round_req",
+            "round_req_min",
+            "round_req_max",
+            "buf_task_tmp",
+            "spawn_task_max",
+            "round_task",
+            "round_task_min",
+            "round_res",
+            "round_yield_err",
+            "round_entity",
+        ];
+        let file = std::fs::File::open(path.unwrap_or("./config")).unwrap();
+        let reader = BufReader::new(file);
+        reader.lines().filter(|line| line.is_ok()).for_each(|line| {
+            let pairs = line
+                .unwrap()
+                .split(":")
+                .map(|ele| ele.to_string())
+                .collect::<Vec<String>>();
+            if pairs.len() == 2 {
+                let key = pairs[0].trim();
+                if fields.contains(&key) {
+                    let value = pairs[1].trim().trim_end_matches(|c| c == ',');
+                    self.set(key, value, fail_safe);
+                }
+            }
+        });
+        self.init();
+        //println!("{:?}", self);
+    }
+
+    fn init(&mut self) {
+        if self.arg_profile.is_some() {
+            if self.arg_profile.as_ref().unwrap().profile_min
+                >= self.arg_profile.as_ref().unwrap().profile_max
+            {
+                self.arg_profile.as_mut().unwrap().profile_max =
+                    self.arg_profile.as_ref().unwrap().profile_min * 3 + 1;
+            }
+        }
+        if self.round_req_min >= self.round_req_max {
+            self.round_req_max = self.round_req_min * 3 + 1;
+        }
+    }
 }
 
 /// To control the workflow of engine in dealing with `Profile`
@@ -52,35 +406,12 @@ pub struct ArgProfile {
 }
 
 impl ArgProfile {
+    /// create an instance of `ArgProfile`
     pub fn new() -> Self {
         ArgProfile {
             is_on: false,
-            profile_min: 3,
-            profile_max: 10,
-        }
-    }
-}
-
-impl ArgApp {
-    pub fn new() -> Self {
-        ArgApp {
-            gap: 15,
-            join_gap: 7,
-            join_gap_emer: 0.1,
-            round_req: 10,
-            round_req_min: 3,
-            round_req_max: 70,
-            buf_task_tmp: 10000,
-            spawn_task_max: 100,
-            round_task: 10,
-            round_task_min: 7,
-            round_res: 10,
-            round_yield_err: 10,
-            round_result: 10,
-            skip_history: true,
-            rate: Arc::new( Mutex::new( ArgRate::new() ) ),
-            arg_profile: None,
-            data_dir: "data/".to_string(),
+            profile_min: 0,
+            profile_max: 0,
         }
     }
 }
@@ -136,7 +467,7 @@ impl ArgRate {
         }
     }
 
-    pub fn update(&mut self) {
+    pub fn update(&mut self) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -153,7 +484,9 @@ impl ArgRate {
                 self.stamps.clear();
                 self.remains = self.load as u64;
             }
+            return true;
         }
+        false
     }
 
     /// backup the `Task` `Profile` `Request` for some time in case of interupt

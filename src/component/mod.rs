@@ -22,15 +22,15 @@ use std::error::Error;
 use std::fmt::Debug;
 
 #[derive(Debug)]
-pub struct PfileError {
+pub struct ProfileError {
     pub desc: String,
 }
-impl std::fmt::Display for PfileError {
+impl std::fmt::Display for ProfileError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Profile Error.")
     }
 }
-impl Error for PfileError {}
+impl Error for ProfileError {}
 
 #[derive(Debug)]
 pub struct ParseError {

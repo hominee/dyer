@@ -8,6 +8,7 @@ use std::fs;
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
+use crate::utils;
 
 /// `Task`, as it means, a scheduled job to be done, contains most infomation of `Request`. For the  purposes of extensive compatibility,
 /// A generic parameter `T` is required in dealing with it.
@@ -26,7 +27,7 @@ where
     /// checkpoint in seconds by which this `Task` is allowed to be executed
     pub able: f64,
     // FIXME add an member to AppArg
-    /// times that this `Task` has failed, by default, the threshold is 2, customize it in `AppArg`
+    /// times that this `Task` has failed, by default, the threshold is 2, customize it in `ArgApp`
     pub trys: u8,
     /// the index to get the parser parsing the `Response` when it's done
     pub parser: String,
@@ -38,6 +39,21 @@ impl<T> Task<T>
 where
     T: Serialize + for<'a> Deserialize<'a> + Debug + Clone,
 {
+    /// create an instance
+    pub fn new() -> Self {
+        let now = utils::now();
+        Task::<T> {
+            uri: "".to_string(),
+            method: "GET".to_string(),
+            headers: HashMap::new(),
+            body: None,
+            able: now,
+            trys: 0,
+            parser: "".to_string(),
+            targs: None,
+        }
+    }
+
     /// store unfinished or extra `Task`s,
     pub fn stored(path: &str, task: &mut Arc<Mutex<Vec<Task<T>>>>) {
         let mut file = fs::OpenOptions::new()
@@ -75,24 +91,3 @@ where
     }
 }
 
-impl<T> Default for Task<T>
-where
-    T: Serialize + for<'a> Deserialize<'a> + Clone + Debug,
-{
-    fn default() -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
-        Task::<T> {
-            uri: "".to_string(),
-            method: "GET".to_string(),
-            headers: HashMap::new(),
-            body: None,
-            able: now,
-            trys: 0,
-            parser: "".to_string(),
-            targs: None,
-        }
-    }
-}

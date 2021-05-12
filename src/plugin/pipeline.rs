@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use typed_builder::TypedBuilder;
 
 /// default method used when open the `PipeLine`
-pub async fn pl_open<'a, C>() -> &'a Option<C>
+async fn pl_open<'a, C>() -> &'a Option<C>
 where
     C: 'a,
 {
@@ -11,7 +11,7 @@ where
 }
 
 /// default method used when close the `PipeLine`
-pub async fn pl_close<'a, I, C>()
+async fn pl_close<'a, I, C>()
 where
     I: Send + Sync + std::fmt::Debug,
     C: 'a,
@@ -20,7 +20,7 @@ where
 }
 
 /// default method used to consume extracted Entities
-pub async fn pl_item<I>(item: &mut Arc<Mutex<Vec<I>>>)
+async fn pl_item<I>(item: &mut Arc<Mutex<Vec<I>>>)
 where
     I: Send + Sync + std::fmt::Debug,
 {
