@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "1.2.0"
+version = "2.0.0"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
@@ -28,12 +28,8 @@ flate2 = "1.0.20"
 bytes = "0.5.6"
 signal-hook = "0.1.17"
 log = "0.4.13"
-macros = {path = "macros/", version = "0.1.0"}
+dyer-macros = {path = "dyer-macros/", version = "0.1.0"}
 
 [dev-dependencies]
 select = "0.5.0"
 simple_logger = "1.11.0"
-
-[[example]]
-name = "simple-demo"
-path = "examples/simple-demo/src/main.rs"

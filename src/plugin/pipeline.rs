@@ -68,7 +68,7 @@ async fn pl_yerr(item: &mut Arc<Mutex<Vec<String>>>) {
 ///     PipeLine<I, C> {
 ///         close_pipeline: pl_close,
 ///         //open_pipeline:  pl_open,
-///         process_item:   pl_item,
+///         process_entity:   pl_item,
 ///         process_yerr:   pl_yerr,
 ///     }
 /// };
@@ -81,7 +81,7 @@ async fn pl_yerr(item: &mut Arc<Mutex<Vec<String>>>) {
 /// PipeLine::<I, C> {
 ///     open_pipeline: &|| pl_open().boxed_local(),
 ///     close_pipeline: &|| pl_close().boxed_local(),
-///     process_item: &|items: &mut Arc<Mutex<Vec<I>>>| pl_item(items).boxed_local(),
+///     process_entity: &|items: &mut Arc<Mutex<Vec<I>>>| pl_item(items).boxed_local(),
 ///     process_yerr: &|items: &mut Arc<Mutex<Vec<String>>>| pl_yerr(items).boxed_local(),
 ///     };
 /// ```
@@ -101,7 +101,7 @@ where
     #[builder(
         default_code = r#" &|items: &mut Arc<Mutex<Vec<I>>>| pl_item(items).boxed_local() "#
     )]
-    pub process_item: &'pl dyn Fn(&mut Arc<Mutex<Vec<I>>>) -> LocalBoxFuture<'_, ()>,
+    pub process_entity: &'pl dyn Fn(&mut Arc<Mutex<Vec<I>>>) -> LocalBoxFuture<'_, ()>,
 
     #[builder(
         default_code = r#" &|yerrs: &mut Arc<Mutex<Vec<String>>>| pl_yerr(yerrs).boxed_local() "#

@@ -1,13 +1,22 @@
+//! Instructions of plugins including [middleware], [pipeline] and their usage.
+//!
+//! # OverView
+//!
+//! middleware serve as a processor between [components], processes data in-and-out.
+//!
+//! pipeline serve as the end of the data flow, data-storage happens here.
+//!
+//! [components]: crate::component
+//! [middleware]: crate::plugin::middleware
+//! [pipeline]: crate::plugin::pipeline
+//!
 pub mod middleware;
 pub mod pipeline;
-pub mod spider;
 
 #[doc(hidden)]
 pub use middleware::MiddleWare;
 #[doc(hidden)]
 pub use pipeline::PipeLine;
-#[doc(hidden)]
-pub use spider::{ProfileInfo, Spider};
 
 /// Macro that make a [plugin] at ease including `PipeLine` `MiddleWare`
 ///
@@ -31,8 +40,8 @@ macro_rules! plug {
     (close_pipeline, $close_pipeline: expr, $entity: ty, $itm: ty, $builder: ident) => {
         $builder.close_pipeline = &|| $close_pipeline().boxed_local()
     };
-    (process_item, $process_item: expr, $entity: ty, $itm: ty,  $builder: ident) => {
-        $builder.process_item = &|items: &mut Arc<Mutex<Vec<$entity>>>| $process_item(items).boxed_local()
+    (process_entity, $process_entity: expr, $entity: ty, $itm: ty,  $builder: ident) => {
+        $builder.process_entity = &|items: &mut Arc<Mutex<Vec<$entity>>>| $process_entity(items).boxed_local()
     };
     (process_yerr, $process_yerr: expr, $entity: ty,$itm: ty, $builder: ident) => {
         $builder.process_yerr = &|items: &mut Arc<Mutex<Vec<String>>>| $process_yerr(items).boxed_local()

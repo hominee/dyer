@@ -7,7 +7,7 @@ extern crate tokio;
 
 use crate::component::{Client, Profile, Request, Response, Task};
 use crate::engine::{arg::ArgProfile, ArgApp};
-use crate::plugin::Spider;
+use crate::engine::Spider;
 use crate::plugin::{MiddleWare, PipeLine};
 use serde::{Deserialize, Serialize};
 use signal_hook::flag as signal_flag;
@@ -277,7 +277,7 @@ where
                 "pipeline put out {} Results",
                 self.entities.lock().unwrap().len()
             );
-            (pipeline.process_item)(&mut self.entities).await;
+            (pipeline.process_entity)(&mut self.entities).await;
         }
     }
 
@@ -432,7 +432,7 @@ where
                 self.task.lock().unwrap().extend(tsks);
             }
         }
-        if self.task_tmp.lock().unwrap().len() >= self.args.buf_task_tmp {
+        if self.task_tmp.lock().unwrap().len() >= self.args.buf_task {
             log::debug!("pipeline out buffered task.");
             let files = self.buf_task();
             let file_name = format!(
@@ -459,7 +459,7 @@ where
         Response::parse_all(self, usize::MAX, spd, middleware).await;
         log::info!("sending all of them into Pipeline");
         (pipeline.process_yerr)(&mut self.yield_err).await;
-        (pipeline.process_item)(&mut self.entities).await;
+        (pipeline.process_entity)(&mut self.entities).await;
         (pipeline.close_pipeline)().await;
         log::info!("All work is Done.");
     }
@@ -483,7 +483,7 @@ where
         spd.open_spider(self);
 
         //skip the history and start new fields to staart with, some Profile required
-        if self.args.skip_history {
+        if self.args.is_skip {
             log::warn!("skipped the history.");
             if let Some(ArgProfile { is_on: true, .. }) = self.args.arg_profile {
                 Profile::exec_all::<E, T>(self.profile.clone(), 3usize, spd.entry_profile()).await;

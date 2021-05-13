@@ -6,20 +6,11 @@ round_entity: 10,
 data_dir: data/
 nap: 15.0,
 join_gap: 7.0,
-round_req: 10,
-round_req_min: 5,
-round_req_max: 77,
-round_task: 10,
-round_task_min: 7,
-round_res: 10,
-round_yield_err: 10,
-
 
 ## ArgProfile
 arg_profile.is_on: false,
 arg_profile.profile_min: 0,
 arg_profile.profile_max: 0,
-
 
 ## ArgRate
 rate.cycle: 600.0,

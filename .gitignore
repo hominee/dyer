@@ -1,4 +1,6 @@
 /target
+/dyer-macros/target/
+/dyer-macros/Cargo.lock
 *.vim
 Cargo.lock
 data/

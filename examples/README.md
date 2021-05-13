@@ -47,8 +47,9 @@ Things is a little complicated for Windows users, but it's okay if you follow th
 
 Run those examples with:
 ```
-cd dyer 
-cargo run --example simple-demo(or customized-demo)
+cd dyer\examples\simple-demo 
+dyer-cli c 
+dyer-cli run(or cargo run ) 
 ```	
 
 Note that the folder [`template`], as the name suggests, is a template [`dyer-cli`] created for illustration.
