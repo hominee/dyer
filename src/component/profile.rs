@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{BufRead, BufReader};
 
 use crate::component::{utils,ProfileError, Client, ResError, Response};
-use crate::plugin::ProfileInfo;
+use crate::engine::ProfileInfo;
 use futures::future::join_all;
 use serde::{Deserialize, Serialize};
 use std::fmt::Debug;

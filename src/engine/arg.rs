@@ -1,5 +1,77 @@
+//! Instruction fields of [ArgApp] and its Configuration
+//!
+//! # `config` Configuration
+//!
+//! Some fields are required, some are not Configurable, some are optional, The following fields
+//! are configurable 
+//!
+//! ## ArgApp
+//!
+//! **`is_skip`**: `bool`, `true` as default, use the files stroed in `data_dir` or not, if not a new
+//!
+//! **`spawn_task_max`**: `usize`, `100` as default, the maximal length of spawned tasks
+//!
+//! **`buf_task`**: `usize`, `10000` as default, the length of `Task` collected by `parser`s, exceeding
+//! which all `Task` will be stored into `data_dir/tasks/` for memory saving
+//!
+//! **`round_entity`**: `usize`, `10` as default, the number of entities exceed which `process_entity`
+//! is called to consume them
+//! session will started all older files will be truncated.
+//!
+//! **`data_dir`**: `string`, `data/` as default, the place to store or load files of `App` when
+//! reaching` rate.cycle`
+//!
+//! **`nap`**: `f64`, `15.0` as default, the duration after which generated `Task` or `Profile` or recycled `Profile` become
+//! availible
+//!
+//! **`join_gap`**: `f64`, `7.0` as default, the duration which the spawned task exceeds the executor
+//! is called to forcefully join it
+//!
+//! **`round_req`**: `usize`, `10`, for more to see [ArgApp]
+//!
+//! **`round_req_min`**: `usize`, `5`, for more to see [ArgApp]
+//!
+//! **`round_req_max`**: `uize`, `77`, for more to see [ArgApp]
+//!
+//! **`round_task`**: `usize`, `10` as default, for more to see [ArgApp]
+//!
+//! **`round_task_min`**: `usize`, `7`, for more to see [ArgApp]
+//!
+//! **`round_res`**: `usize`, `10` as default, for more to see [ArgApp]
+//!
+//! **`round_yield_err`**: `usize`, `10` as default, the number of `Response` cannot be parsed, exceed which `process_entity`
+//! is called to consume them,
+//! 
+//! ## ArgProfile
+//! 
+//! **`arg_profile.is_on`**: `bool`, `false` as defalut, enable profile customization or not, when
+//! true, `ProfileInfo.req` cannot be None, 
+//!
+//! **`arg_profile.profile_min`**: `usize` `0` as default, the minimal length of profile( including
+//! these in use or in future )
+//!
+//! **`arg_profile.profile_max`**: `usize` `0` as default, the minimal length of profile( including,
+//! these in use or in future )
+//! 
+//! ## ArgRate
+//! 
+//! **`rate.cycle`**: `f64`, 600.0 as default, the duration after which backup files of `App`
+//!
+//! **`rate.load`**: `f64`, 99.0 as default, the load to be spawned in each `interval`,
+//!
+//! **`rate.rate_low`**: `f64`, 0.333 as dafault, a value between 0-1.0 that lower the taks to be spawned, eg. the oringnal
+//! value is 12, rate_low is 0.33, the tasks to be spawned is 12.0 * 0.33 ~ 4. 
+//!
+//! **`rate.err`**: `usize`, the nubmer that erros of `Response` occurs, the default value is 0,
+//!
+//! **`rate.interval`**: `f64`, the duration of time after which updating `ArgRate` `ArgApp`, the default
+//! value is 30.0,
+//!
+//! [ArgApp]: crate::engine::arg::ArgApp
+//!
 use std::io::{BufRead, BufReader};
 use std::sync::{Arc, Mutex};
+use crate::utils;
 
 /// Arguments that control the `App` at runtime, including using history or not,  
 /// `Task` `Profile` `Request` `Response` `Entity` consuming and generating
@@ -7,7 +79,7 @@ use std::sync::{Arc, Mutex};
 #[derive(std::fmt::Debug)]
 pub struct ArgApp {
     /// time tap added to created Tasks or Profiles
-    pub gap: f64,
+    pub nap: f64,
     /// gap to forcefully join the spawned task
     pub join_gap: f64,
     /// number that once for a concurrent future poll
@@ -17,7 +89,7 @@ pub struct ArgApp {
     /// cache request maximal length
     pub round_req_max: usize,
     /// buffer length for the created task.
-    pub buf_task_tmp: usize,
+    pub buf_task: usize,
     /// maximal spawned task that cached
     pub spawn_task_max: usize,
     /// construct req from task one time
@@ -32,7 +104,7 @@ pub struct ArgApp {
     pub round_entity: usize,
     /// use files in directory `data/` or not,
     /// set true as default
-    pub skip_history: bool,
+    pub is_skip: bool,
     /// control the task speed runtime
     pub rate: Arc<Mutex<ArgRate>>,
     /// control the profile workflow
@@ -45,19 +117,19 @@ impl ArgApp {
     /// create an instance of `ArgApp`
     pub fn new() -> Self {
         let mut arg = ArgApp {
-            gap: 10.0,
+            nap: 17.0,
             join_gap: 7.0,
             round_req: 10,
             round_req_min: 3,
             round_req_max: 70,
-            buf_task_tmp: 10000,
+            buf_task: 1000,
             spawn_task_max: 100,
             round_task: 10,
             round_task_min: 7,
             round_res: 10,
             round_yield_err: 10,
             round_entity: 10,
-            skip_history: true,
+            is_skip: true,
             rate: Arc::new(Mutex::new(ArgRate::new())),
             arg_profile: None,
             data_dir: "data/".into(),
@@ -69,13 +141,13 @@ impl ArgApp {
     /// set key-value pairs in `ArgApp`
     fn set(&mut self, key: &str, value: &str, fail_safe: bool) {
         match key {
-            "gap" => {
+            "nap" => {
                 if let Ok(v) = value.parse::<f64>() {
-                    self.gap = v;
+                    self.nap = v;
                 }else if fail_safe {
-                    log::error!("update failed, invalid value for gap: {}", value);
+                    log::error!("update failed, invalid value for nap: {}", value);
                 }else {
-                    panic!("update failed, invalid value for gap: {}", value);
+                    panic!("update failed, invalid value for nap: {}", value);
                 }
             }
             "join_gap" => {
@@ -115,13 +187,13 @@ impl ArgApp {
                     panic!("update failed, invalid value for round_req_max: {}", value);
                 }
             }
-            "buf_task_tmp" => {
+            "buf_task" => {
                 if let Ok(v) = value.parse::<usize>() {
-                    self.buf_task_tmp = v;
+                    self.buf_task = v;
                 }else if fail_safe {
-                    log::error!("update failed, invalid value for buf_task_tmp: {}", value);
+                    log::error!("update failed, invalid value for buf_task: {}", value);
                 }else {
-                    panic!("update failed, invalid value for buf_task_tmp: {}", value);
+                    panic!("update failed, invalid value for buf_task: {}", value);
                 }
             }
             "spawn_task_max" => {
@@ -178,13 +250,13 @@ impl ArgApp {
                     panic!("update failed, invalid value for round_entity: {}", value);
                 }
             }
-            "skip_history" => {
+            "is_skip" => {
                 if let Ok(v) = value.parse::<bool>() {
-                    self.skip_history = v;
+                    self.is_skip = v;
                 }else if fail_safe {
-                    log::error!("update failed, invalid value for skip_history: {}", value);
+                    log::error!("update failed, invalid value for is_skip: {}", value);
                 }else {
-                    panic!("update failed, invalid value for skip_history: {}", value);
+                    panic!("update failed, invalid value for is_skip: {}", value);
                 }
             }
             "data_dir" => {
@@ -203,24 +275,6 @@ impl ArgApp {
                     log::error!("update failed, invalid value for rate.cycle: {}", value);
                 }else {
                     panic!("update failed, invalid value for rate.cycle: {}", value);
-                }
-            }
-            "rate.cycle_usage" => {
-                if let Ok(v) = value.parse::<f64>() {
-                    self.rate.lock().unwrap().cycle_usage = v;
-                }else if fail_safe {
-                    log::error!("update failed, invalid value for rate.cycle_usage: {}", value);
-                }else {
-                    panic!("update failed, invalid value for rate.cycle_usage: {}", value);
-                }
-            }
-            "rate.period_threshold" => {
-                if let Ok(v) = value.parse::<f64>() {
-                    self.rate.lock().unwrap().period_threshold = v;
-                }else if fail_safe {
-                    log::error!("update failed, invalid value for rate.period_threshold: {}", value);
-                }else {
-                    panic!("update failed, invalid value for rate.period_threshold: {}", value);
                 }
             }
             "rate.interval" => {
@@ -242,7 +296,7 @@ impl ArgApp {
                 }
             }
             "rate.remains" => {
-                if let Ok(v) = value.parse::<u64>() {
+                if let Ok(v) = value.parse::<usize>() {
                     self.rate.lock().unwrap().remains = v;
                 }else if fail_safe {
                     log::error!("update failed, invalid value for rate.remains: {}", value);
@@ -337,20 +391,18 @@ impl ArgApp {
             "arg_profile.profile_min",
             "arg_profile.profile_max",
             "rate.cycle",
-            "rate.cycle_usage",
-            "rate.period_threshold",
             "rate.interval",
             "rate.load",
             "rate.remains",
             "rate.rate_low",
             "data_dir",
-            "skip_history",
-            "gap",
+            "is_skip",
+            "nap",
             "join_gap",
             "round_req",
             "round_req_min",
             "round_req_max",
-            "buf_task_tmp",
+            "buf_task",
             "spawn_task_max",
             "round_task",
             "round_task_min",
@@ -425,16 +477,14 @@ pub struct ArgRate {
     pub cycle: f64,
     /// time the app runs in each cycle
     pub cycle_usage: f64,
-    /// between 0-1, the rate that low mode lasts in each period
-    pub period_threshold: f64,
     /// a time gap when updating some infomation
     pub interval: f64,
     /// normally the speed that the app spawns tasks in the whole interval
     pub load: f64,
     /// failed tasks in each interval
-    pub err: u64,
+    pub err: usize,
     /// remaining jobs to do in each cycle in each interval
-    pub remains: u64,
+    pub remains: usize,
     /// the rate applied to limit the requests to be spawned in low mode
     pub rate_low: f64,
     /// time anchor by which the mode is low
@@ -447,10 +497,7 @@ pub struct ArgRate {
 
 impl ArgRate {
     pub fn new() -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        let now = utils::now();
         ArgRate {
             uptime: 0.0,
             cycle: 600.0,
@@ -462,16 +509,12 @@ impl ArgRate {
             err: 0,
             anchor: now + 30.0,
             interval: 30.0,
-            period_threshold: 0.168,
             stamps: Vec::new(),
         }
     }
 
     pub fn update(&mut self) -> bool {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64();
+        let now = utils::now();
         if now > self.anchor {
             self.cycle_usage += self.interval;
             self.anchor += self.interval;
@@ -482,7 +525,7 @@ impl ArgRate {
             if now >= self.anchor_low {
                 log::debug!("active period");
                 self.stamps.clear();
-                self.remains = self.load as u64;
+                self.remains = self.load as usize;
             }
             return true;
         }
@@ -502,22 +545,19 @@ impl ArgRate {
     pub fn get_len(&mut self, tm: Option<f64>) -> usize {
         let now = match tm {
             Some(now) => now,
-            None => std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs_f64(),
+            None => utils::now(),
         };
         let delta = self.load * (self.anchor - now) / self.interval;
         let len = if self.remains as f64 >= delta + 0.5 && delta >= 0.0 {
             self.remains as f64 - delta
         } else if (self.remains as f64) < delta + 0.5 && delta >= 0.0 {
-            self.remains = delta as u64;
+            self.remains = delta as usize;
             0.0
         } else {
             self.remains as f64
         };
         log::trace!("remains:{}, delta: {}, len: {}", self.remains, delta, len);
-        self.remains = self.remains - (len as u64) + 1;
+        self.remains = self.remains - (len as usize) + 1;
         if len > 0.0 {
             log::trace!("only {} tasks are valid by rate control.", len);
         }

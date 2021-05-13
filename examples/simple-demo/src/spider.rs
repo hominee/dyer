@@ -1,39 +1,33 @@
-// Set up initial condition when stepping into Spider and work to do when closing spider
-
 use crate::entity::{Entities, Parg, Targ};
 use crate::parser::*;
 use dyer::{plug, App, ParseResult, ProfileInfo, Request, Response, Spider, Task};
+use dyer::dyer_macros::spider;
 
 type Stem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
 type Btem<E, T, P> = dyn Fn(Response<T, P>) -> ParseResult<E, T, P>;
 
-pub struct MySpider {
-    pub start_uris: Vec<String>,
-}
+#[spider]
+pub struct MySpider {}
 
 impl Spider<Entities, Targ, Parg> for MySpider {
-    // create a instance
+    // create an instance 
     fn new() -> Self {
-        MySpider {
-            start_uris: vec!["https://quotes.toscrape.com".into()],
-        }
+        MySpider{}
     }
+
     // preparation before opening spider
     fn open_spider(&self, _app: &mut App<Entities, Targ, Parg>) {}
 
     // `Task` to be executed when starting `dyer`. Note that this function must reproduce a
     // non-empty vector, if not, the whole program will be left at blank.
     fn entry_task(&self) -> Stem<Vec<Task<Targ>>> {
-        let mut tasks = Vec::new();
-        for uri in self.start_uris.iter() {
-            let mut task = Task::new();
-            // all infomation needed is uri and parser
-            task.uri = uri.to_string();
-            // parser is indexed by a `String` name, you can check that in the function `get_parser`.
-            task.parser = "parse_quote".to_string();
-            tasks.push(task);
-        }
-        Ok(tasks)
+        let mut task = Task::new();
+
+        // all infomation needed is uri and parser
+        task.uri = "https://quotes.toscrape.com".to_string();
+        // parser is indexed by a `String` name, you can check that in the function `get_parser`.
+        task.parser = "parse_quote".to_string();
+        Ok(vec![task])
     }
 
     // the generator of `Profile`

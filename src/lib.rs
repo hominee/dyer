@@ -82,6 +82,7 @@
 //!     |___src/spider.rs
 //!     |___src/middleware.rs
 //!     |___src/pipeline.rs
+//!     |___src/lib.rs
 //! ```    
 //! Main functionality of each file:
 //! * the `entity.rs` contains entities/data structure to be used/collected
@@ -89,45 +90,49 @@
 //! * the `spider.rs` contains initial when opening and final things to do when closing
 //! * the `middleware.rs` contains Some middlewares that process data at runtime
 //! * the `pipeline.rs` contains entities manipulation including data-storage, displsying and so on
+//! * the `lib.rs` exports all modules inside the directory, just do nothing here normally
 //! * `Cargo.toml` is the basic configuration of the project
 //! * `README.md` contains some instructions of the project
-//! * `data` folder balance the app load when data in app exceeds, and backup app data at certain
-//! gap
+//! * `data/` place to store/load files of `App` when load-balancing and backup
 //!
-//! Then it is your show time, basically there are simple example items(`function` `enum` `struct`)
+//! Then it is your show time, basically there are simple example items(`function`, `enum`, `struct`)
 //! in each file you can follow. After that check your code
 //! ```bash
 //! dyer-cli check
 //! ```
-//! if you run it the first time, dyer-cli will download the crates and then check the code. Some
-//! of you may notice that there is no `main.rs` here. Yes, you're right, but `dyer-cli` will
-//! generate it for you which you need not worry about. 
+//! if you run it the first time, dyer-cli will download the crates and then check the code. 
 //! if some warning happens such as `unused import` or `dead code` the command does a lot for you:
 //! ```bash
 //! dyer-cli fix
 //! ```
 //! however it won't help if some errors occur, if so, you have to debug the code manually.
-//! make config file in the root directory
-//! the file contains fomw configuration of `ArgApp` the will update periodically, more details see
-//! [examples]
+//!
+//! Edit `config` file in the root directory
+//!
+//! the file contains some configurations of `ArgApp` that will update periodically, for more details see
+//! [config Configuration]
+//!
 //! When the program compiles, haha run it:
 //! ```bash
 //! dyer-cli run
 //! ```
+//! [config Configuration]: crate::engine::arg
 //!
-//! It is believed that learning by example is the best, and some [examples] are provided to illustrate how to use.
+//! Short as it seems, here represents the normal procedure to write your program. It is believed that learning by example is the best, and some [examples] are provided to illustrate how to use.
 //!
 //! # Features to be added
 //!
 //! ✅ Profile customization
 //!
-//! ✅ Periodic configuration update
+//! ✅ Periodic Configuration Update
 //!
-//! ⬜️ Proxy support
+//! ✅ Dyer-cli Command-Line Tool Support
 //!
-//! ⬜️ Debugging support(not bad though for now)
+//! ✅ Interrupt and Resume Support
 //!
-//! ⬜️ More signal support(Ctrl+c for now)
+//! ⬜️ Proxy Support
+//!
+//! ⬜️ Debugging Support(not bad though for now)
 //!
 //! ⬜️  Autothrottling and more customized plugins support
 //!
@@ -156,15 +161,15 @@ pub use component::{
     get_cookie, Client, ParseError, ProfileError, TaskError, ReqError, ParseResult, Profile, Request, ResError, Response, Task,
 };
 #[doc(hidden)]
-pub use engine::{App, ArgApp, ArgProfile, ArgRate};
+pub use engine::{App, ArgApp, ArgProfile, ArgRate, ProfileInfo, Spider};
 #[doc(hidden)]
-pub use plugin::{MiddleWare, PipeLine, ProfileInfo, Spider};
+pub use plugin::{MiddleWare, PipeLine};
 
 #[doc(hidden)]
 pub use futures::future::{BoxFuture, FutureExt};
 #[doc(hidden)]
 pub use log;
 #[doc(hidden)]
-pub use macros;
+pub use dyer_macros;
 #[doc(hidden)]
 pub use serde_json as to_json;

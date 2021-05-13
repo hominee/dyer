@@ -43,6 +43,6 @@ where
     /// preparation before close `Spider`
     fn close_spider(&self, app: &mut App<U, T, P>);
 
-    /// obtain parse throght ind
-    fn get_parser<'a>(&self, ind: &str) -> Option<Parse<'a, U, T, P>>;
+    /// obtain parse through index
+    fn get_parser<'a>(&self, index: &str) -> Option<Parse<'a, U, T, P>>;
 }

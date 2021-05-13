@@ -1,3 +1,22 @@
+//! Instructions of components including [client], [profile], [request], [response], [task], [utils].
+//!
+//! # OverView
+//!
+//! `client` contains some methods to execute `Request` as Future;
+//!
+//! `utils` is a collection of useful tools like [hash] get now time stamp [now] and other stuff;
+//!
+//! the others, as the file name suggests, serve as component in integration
+//!
+//! [hash]: crate::component::utils::hash
+//! [now]: crate::component::utils::now
+//! [client]: crate::component::client
+//! [profile]: crate::component::profile
+//! [request]: crate::component::request
+//! [response]: crate::component::response
+//! [task]: crate::component::task
+//! [utils]: crate::component::utils
+//!
 pub mod client;
 pub mod profile;
 pub mod request;

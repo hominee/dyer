@@ -1,5 +1,5 @@
 [package]
-name = "macros"
+name = "dyer-macros"
 version = "0.1.0"
 authors = ["captain <captain@captain>"]
 edition = "2018"

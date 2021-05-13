@@ -3,8 +3,8 @@ extern crate hyper;
 extern crate hyper_tls;
 
 use crate::component::{Profile,utils, Request, Task};
-use crate::engine::App;
-use crate::plugin::{MiddleWare, Spider};
+use crate::engine::{App, Spider};
+use crate::plugin::MiddleWare;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt::Debug;

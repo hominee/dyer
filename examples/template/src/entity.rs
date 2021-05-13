@@ -1,10 +1,9 @@
-// define data structure here to be used or collected
-// all data structures got to be Serializable and Deserializable
-
 use serde::{Deserialize, Serialize};
+use dyer::dyer_macros::entity;
 
-// the Entity to be used
 /*
+ * the Entity to be used
+ *
  *#[derive(Deserialize, Serialize, Debug, Clone)]
  *pub struct Item1 {
  *    pub field1: String,
@@ -12,18 +11,25 @@ use serde::{Deserialize, Serialize};
  *}
  */
 
-// serve as a placeholder for all entities, and generic parameter of dyer::App
+/* serve as a placeholder for all entities, and generic parameter of dyer::App
+ * attribute #[entity(entities)] mark the enum and use it as container to all data to be collected
+ */
+#[entity(entities)]
 #[derive(Serialize, Debug, Clone)]
 pub enum Entities {
     //Item1(Item1),
 }
 
-// serve as a appendix/complement to dyer::Task
-// providing more infomation for this Task, leave it empty if not necessary
+// serve as a appendix/complement to dyer::Task,
+// leave it empty if not necessary
+// attribute #[entity(targ)] mark the struct and use it as generic type for `Task`
+#[entity(targ)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Targ {}
 
 // serve as a appendix/complement to dyer::Profile
-// providing more infomation for this Profile, empty as default
+// leave it empty as default
+// attribute #[entity(parg)] mark the struct and use it as generic type for `Profile`
+#[entity(parg)]
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct Parg {}
