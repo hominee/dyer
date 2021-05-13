@@ -3,6 +3,14 @@ name = "dyer-macros"
 version = "0.1.0"
 authors = ["captain <captain@captain>"]
 edition = "2018"
+license = "MIT"
+keywords = ["dyer", "dyer-cli"]
+categories = ["network-programming", "web-programming"]
+description = " Dyer-macros is a collection of macros when compiling and building dyer."
+homepage = "https://crates.io/crates/dyer-macros"
+repository = "https://github.com/HomelyGuy/dyer"
+documentation = "https://docs.rs/dyer"
+readme = "README.md"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
