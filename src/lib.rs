@@ -132,6 +132,8 @@
 //!
 //! ⬜️ Proxy Support
 //!
+//! ⬜️ RobotsTxt exclusion Standard Support
+//!
 //! ⬜️ Debugging Support(not bad though for now)
 //!
 //! ⬜️  Autothrottling and more customized plugins support

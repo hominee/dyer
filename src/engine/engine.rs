@@ -157,8 +157,6 @@ where
             res: Arc::new(Mutex::new(Vec::new())),
             entities: Arc::new(Mutex::new(Vec::new())),
             yield_err: Arc::new(Mutex::new(Vec::new())),
-            //fut_res: Arc::new(Mutex::new(Vec::new())),
-            //fut_profile: Arc::new(Mutex::new(Vec::new())),
             fut_res: AppFut::new(),
             fut_profile: AppFut::new(),
             args: ArgApp::new(),
@@ -264,7 +262,7 @@ where
     /// drive and consume extracted Entity into `PipeLine`
     pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, E, C>)
     where
-        C: Send + 'a,
+        C:  'a,
     {
         log::trace!("step into plineout");
         if self.yield_err.lock().unwrap().len() > self.args.round_yield_err {
@@ -343,12 +341,9 @@ where
             log::warn!("enough Future Response, spawn no task.");
         } else {
             log::trace!("take request out to be executed.");
-            //let now = utils::now();
-            //let mut req_tmp = self.req_tmp.lock().unwrap();
             let len = self.args.round_req.min(self.req_tmp.lock().unwrap().len());
             let len_load = self.args.rate.lock().unwrap().get_len(None).min(len);
             if len_load > 0 {
-                log::info!("{} requests spawned", len_load);
                 std::iter::repeat(0).take(len_load).into_iter().for_each(|_| {
                     let now = utils::now();
                     let req = self.req_tmp.lock().unwrap().pop().unwrap();
@@ -357,6 +352,7 @@ where
                     let app_arg = self.args.rate.clone();
                     let app_res = self.res.clone();
                     let joinhandle = task::spawn(async move {
+                        log::info!("spawned requests: {} ", &req.task.uri);
                         let (res, gap) = Client::exec_one(req).await;
                         app_res.lock().unwrap().push(res);
                         app_arg.lock().unwrap().stamps.push(gap);
@@ -367,7 +363,7 @@ where
         }
     }
 
-    ///join spawned task, once it exceed the timing `threshold`, then forcefully join it 
+    ///join spawned task, once it exceed the timing `join_gap`, then forcefully join it 
     pub async fn watch(&mut self) {
         log::trace!("step into watch");
         let threshold_tokio_task = self.args.join_gap;
@@ -452,7 +448,7 @@ where
         middleware: &'a MiddleWare<'b, E, T, P>,
         pipeline: &'a PipeLine<'b, E, C>,
     ) where
-        C: Send + 'b,
+        C: 'b,
     {
         log::trace!("step into close");
         self.info();
@@ -472,7 +468,7 @@ where
         pipeline: PipeLine<'b, E, C>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
-        C: Send + 'a,
+        C:  'a,
     {
         // signal handling initial
         let term = Arc::new(AtomicUsize::new(0));

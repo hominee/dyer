@@ -31,8 +31,10 @@ where
     /// additional arguments for extensive application
     pub pargs: Option<P>,
 }
-unsafe impl<P> Send for Profile<P> where P: Serialize + for<'a> Deserialize<'a> + Debug + Clone {}
-
+/*
+ *unsafe impl<P> Send for Profile<P> where P: Serialize + for<'a> Deserialize<'a> + Debug + Clone {}
+ *
+ */
 impl<P> Profile<P>
 where
     P: Serialize + for<'a> Deserialize<'a> + Debug + Clone,

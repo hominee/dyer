@@ -44,20 +44,22 @@ where
         }
     }
 }
-unsafe impl<E, T, P> Sync for ParseResult<E, T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    E: Serialize + std::fmt::Debug + Clone,
-{
-}
-unsafe impl<E, T, P> Send for ParseResult<E, T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    E: Serialize + std::fmt::Debug + Clone,
-{
-}
+/*
+ *unsafe impl<E, T, P> Sync for ParseResult<E, T, P>
+ *where
+ *    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    E: Serialize + std::fmt::Debug + Clone,
+ *{
+ *}
+ *unsafe impl<E, T, P> Send for ParseResult<E, T, P>
+ *where
+ *    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    E: Serialize + std::fmt::Debug + Clone,
+ *{
+ *}
+ */
 
 /// The result of a `Resquest`, returned by `Client`, contains `Task` and `Profile` which consist
 /// of,
@@ -81,18 +83,20 @@ where
     /// error message returned by server or `dyner` if `Request` goes wrong
     pub msg: Option<String>,
 }
-unsafe impl<T, P> Sync for Response<T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-{
-}
-unsafe impl<T, P> Send for Response<T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-{
-}
+/*
+ *unsafe impl<T, P> Sync for Response<T, P>
+ *where
+ *    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *{
+ *}
+ *unsafe impl<T, P> Send for Response<T, P>
+ *where
+ *    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *{
+ *}
+ */
 
 impl<'t, T, P> Response<T, P>
 where
