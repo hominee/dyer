@@ -6,9 +6,10 @@ extern crate signal_hook;
 extern crate tokio;
 
 use crate::component::{Client, Profile, Request, Response, Task};
-use crate::engine::{arg::ArgProfile, ArgApp};
 use crate::engine::Spider;
+use crate::engine::{arg::ArgProfile, ArgApp};
 use crate::plugin::{MiddleWare, PipeLine};
+use crate::utils;
 use serde::{Deserialize, Serialize};
 use signal_hook::flag as signal_flag;
 use std::sync::{
@@ -16,21 +17,19 @@ use std::sync::{
     Arc, Mutex,
 };
 use tokio::task;
-use crate::utils;
 
 // H hash of T serve as index for T
 // and linkedlist provodes positional infomation for certain hash H
-pub(crate) struct AppFut 
-{
+pub(crate) struct AppFut {
     /// hash-value pairs
     inner_data: std::collections::HashMap<u64, task::JoinHandle<()>>,
     /// an sorted(ascending) list storing hash and time stamp
-    inner_index: std::collections::LinkedList<(u64, f64)>
+    inner_index: std::collections::LinkedList<(u64, f64)>,
 }
 impl AppFut {
     /// create an instance
     pub(crate) fn new() -> Self {
-        Self{
+        Self {
             inner_data: std::collections::HashMap::new(),
             inner_index: std::collections::LinkedList::new(),
         }
@@ -38,33 +37,34 @@ impl AppFut {
 
     /// directly take an value out and feed it to a closure
     /// and update `inner_index`
-    pub(crate) async fn direct_join(&mut self, mut ids: Vec<u64>,) {
+    pub(crate) async fn direct_join(&mut self, mut ids: Vec<u64>) {
         let mut raw_results = Vec::with_capacity(ids.len());
         ids.iter().for_each(|id| {
             if let Some(item) = self.inner_data.remove(id) {
                 raw_results.push(item);
             }
-        }); 
+        });
         let mut item_cached = Vec::new();
         while let Some(item) = self.inner_index.pop_front() {
             if ids.contains(&item.0) {
                 let p = ids.iter().position(|&x| x == item.0).unwrap();
                 ids.remove(p);
-            }else {
+            } else {
                 item_cached.push(item);
             }
             if ids.is_empty() || self.inner_index.is_empty() {
                 break;
             }
-
         }
-        item_cached.into_iter().for_each(|item| self.inner_index.push_back(item));
+        item_cached
+            .into_iter()
+            .for_each(|item| self.inner_index.push_back(item));
         Client::join_all(raw_results).await;
     }
 
     /// execute results from `get_idel` and feed it to a callback
     /// and update `inner_index`
-    pub(crate) async fn await_join(&mut self,  gap: f64, capacity: usize) {
+    pub(crate) async fn await_join(&mut self, gap: f64, capacity: usize) {
         let idels = self.get_idel(gap, capacity);
         if !idels.is_empty() {
             log::info!(
@@ -72,17 +72,19 @@ impl AppFut {
                 idels.len(),
                 self.inner_index.len() + idels.len(),
             );
-            let tasks = idels.into_iter().map(|idel| idel.2 ).collect::<Vec<task::JoinHandle<()>>>();
+            let tasks = idels
+                .into_iter()
+                .map(|idel| idel.2)
+                .collect::<Vec<task::JoinHandle<()>>>();
             Client::join_all(tasks).await;
         }
     }
 
     /// inset an item and update `inner_data` and `inner_index`
-    pub(crate) fn insert(&mut self, item: task::JoinHandle<()>, hash: u64, stamp: f64,) 
-    {
+    pub(crate) fn insert(&mut self, item: task::JoinHandle<()>, hash: u64, stamp: f64) {
         self.inner_data.insert(hash, item);
-        let now =  utils::now();
-        self.inner_index.push_back(( hash, stamp));
+        let now = utils::now();
+        self.inner_index.push_back((hash, stamp));
         assert!(self.inner_index.front().unwrap_or(&(0, 0.0)).1 < now);
     }
 
@@ -91,13 +93,12 @@ impl AppFut {
         let now = utils::now();
         let mut items = Vec::with_capacity(capacity);
         while let Some(item) = self.inner_index.pop_front() {
-            if item.1 + gap <= now && items.len() <= capacity{
+            if item.1 + gap <= now && items.len() <= capacity {
                 let ele = (item.0, item.1, self.inner_data.remove(&item.0).unwrap());
                 items.push(ele);
-
-            }else {
+            } else {
                 self.inner_index.push_front(item);
-                    break;
+                break;
             }
         }
         if !items.is_empty() {
@@ -157,8 +158,6 @@ where
             res: Arc::new(Mutex::new(Vec::new())),
             entities: Arc::new(Mutex::new(Vec::new())),
             yield_err: Arc::new(Mutex::new(Vec::new())),
-            //fut_res: Arc::new(Mutex::new(Vec::new())),
-            //fut_profile: Arc::new(Mutex::new(Vec::new())),
             fut_res: AppFut::new(),
             fut_profile: AppFut::new(),
             args: ArgApp::new(),
@@ -226,7 +225,7 @@ where
         }) = self.args.arg_profile
         {
             // profile customization is on
-            let rd1 = (utils::now() * 3000.0 ) % 1.0;
+            let rd1 = (utils::now() * 3000.0) % 1.0;
             let profile_len = self.profile.lock().unwrap().len()
                 + self.fut_profile.inner_index.len()
                 + self.req.lock().unwrap().len()
@@ -235,7 +234,7 @@ where
             let exceed = !less && profile_len <= profile_max && rd1 <= 0.333;
             let fut_exceed = profile_len < profile_max;
             let mut emer = false;
-            let rd2 = (utils::now() * 3000.0 ) % 1.0;
+            let rd2 = (utils::now() * 3000.0) % 1.0;
             if profile_len < self.task.lock().unwrap().len() && rd2 <= 0.01 {
                 emer = true;
             }
@@ -244,13 +243,20 @@ where
                 let profile = self.profile.clone();
                 log::info!("{} requests spawned for Profile", 3);
                 let f = spd.entry_profile();
-                let req = f.req.as_ref().expect("Request to generate profile cannot be none when profile customization enabled");
-                let salt = [&req.task.uri, &req.task.method, &req.task.able.to_string(), &req.task.trys.to_string()];
+                let req = f.req.as_ref().expect(
+                    "Request to generate profile cannot be none when profile customization enabled",
+                );
+                let salt = [
+                    &req.task.uri,
+                    &req.task.method,
+                    &req.task.able.to_string(),
+                    &req.task.trys.to_string(),
+                ];
                 let hash = utils::hash(salt.iter());
                 let joinhandle = task::spawn(async move {
                     match Profile::exec_one::<E, T>(f).await {
                         Ok(item) => profile.lock().unwrap().push(item),
-                        Err(e) =>log::error!("generate profile failed for: {}", e.desc), 
+                        Err(e) => log::error!("generate profile failed for: {}", e.desc),
                     }
                 });
                 self.fut_profile.insert(joinhandle, hash, now);
@@ -264,7 +270,7 @@ where
     /// drive and consume extracted Entity into `PipeLine`
     pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, E, C>)
     where
-        C: Send + 'a,
+        C: 'a,
     {
         log::trace!("step into plineout");
         if self.yield_err.lock().unwrap().len() > self.args.round_yield_err {
@@ -343,40 +349,50 @@ where
             log::warn!("enough Future Response, spawn no task.");
         } else {
             log::trace!("take request out to be executed.");
-            //let now = utils::now();
-            //let mut req_tmp = self.req_tmp.lock().unwrap();
             let len = self.args.round_req.min(self.req_tmp.lock().unwrap().len());
             let len_load = self.args.rate.lock().unwrap().get_len(None).min(len);
             if len_load > 0 {
-                log::info!("{} requests spawned", len_load);
-                std::iter::repeat(0).take(len_load).into_iter().for_each(|_| {
-                    let now = utils::now();
-                    let req = self.req_tmp.lock().unwrap().pop().unwrap();
-                    let salt = [&req.task.uri, &req.task.method, &req.task.able.to_string(), &req.task.trys.to_string()];
-                    let hash = utils::hash(salt.iter());
-                    let app_arg = self.args.rate.clone();
-                    let app_res = self.res.clone();
-                    let joinhandle = task::spawn(async move {
-                        let (res, gap) = Client::exec_one(req).await;
-                        app_res.lock().unwrap().push(res);
-                        app_arg.lock().unwrap().stamps.push(gap);
+                std::iter::repeat(0)
+                    .take(len_load)
+                    .into_iter()
+                    .for_each(|_| {
+                        let now = utils::now();
+                        let req = self.req_tmp.lock().unwrap().pop().unwrap();
+                        let salt = [
+                            &req.task.uri,
+                            &req.task.method,
+                            &req.task.able.to_string(),
+                            &req.task.trys.to_string(),
+                        ];
+                        let hash = utils::hash(salt.iter());
+                        let app_arg = self.args.rate.clone();
+                        let app_res = self.res.clone();
+                        let joinhandle = task::spawn(async move {
+                            log::info!("spawned requests: {} ", &req.task.uri);
+                            let (res, gap) = Client::exec_one(req).await;
+                            app_res.lock().unwrap().push(res);
+                            app_arg.lock().unwrap().stamps.push(gap);
+                        });
+                        self.fut_res.insert(joinhandle, hash, now);
                     });
-                    self.fut_res.insert(joinhandle, hash, now);
-                });
             }
         }
     }
 
-    ///join spawned task, once it exceed the timing `threshold`, then forcefully join it 
+    ///join spawned task, once it exceed the timing `join_gap`, then forcefully join it
     pub async fn watch(&mut self) {
         log::trace!("step into watch");
         let threshold_tokio_task = self.args.join_gap;
         let capacity = self.args.round_req;
         if !self.fut_res.inner_index.is_empty() {
-            self.fut_res.await_join(threshold_tokio_task, capacity).await;
+            self.fut_res
+                .await_join(threshold_tokio_task, capacity)
+                .await;
         }
         if !self.fut_profile.inner_index.is_empty() {
-            self.fut_profile.await_join(threshold_tokio_task, capacity).await;
+            self.fut_profile
+                .await_join(threshold_tokio_task, capacity)
+                .await;
         }
     }
 
@@ -452,7 +468,7 @@ where
         middleware: &'a MiddleWare<'b, E, T, P>,
         pipeline: &'a PipeLine<'b, E, C>,
     ) where
-        C: Send + 'b,
+        C: 'b,
     {
         log::trace!("step into close");
         self.info();
@@ -472,7 +488,7 @@ where
         pipeline: PipeLine<'b, E, C>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
     where
-        C: Send + 'a,
+        C: 'a,
     {
         // signal handling initial
         let term = Arc::new(AtomicUsize::new(0));
@@ -584,7 +600,7 @@ where
 
                     // update config file in each interval
                     if updated {
-                        let data_dir =  self.args.data_dir.clone();
+                        let data_dir = self.args.data_dir.clone();
                         self.args.parse_config(Some(&data_dir), true);
                     }
 

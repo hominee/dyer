@@ -30,12 +30,14 @@ where
     pub able: f64,
     pub headers: Option<std::collections::HashMap<String, String>>,
 }
-unsafe impl<T, P> Send for Request<T, P>
-where
-    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
-{
-}
+/*
+ *unsafe impl<T, P> Send for Request<T, P>
+ *where
+ *    T: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *    P: Serialize + for<'a> Deserialize<'a> + std::fmt::Debug + Clone,
+ *{
+ *}
+ */
 
 impl<T, P> Request<T, P>
 where

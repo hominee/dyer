@@ -100,7 +100,7 @@
 //! ```bash
 //! dyer-cli check
 //! ```
-//! if you run it the first time, dyer-cli will download the crates and then check the code. 
+//! if you run it the first time, dyer-cli will download the crates and then check the code.
 //! if some warning happens such as `unused import` or `dead code` the command does a lot for you:
 //! ```bash
 //! dyer-cli fix
@@ -132,6 +132,8 @@
 //!
 //! ⬜️ Proxy Support
 //!
+//! ⬜️ RobotsTxt exclusion Standard Support
+//!
 //! ⬜️ Debugging Support(not bad though for now)
 //!
 //! ⬜️  Autothrottling and more customized plugins support
@@ -158,7 +160,8 @@ pub mod plugin;
 pub use component::{client, profile, request, response, task, utils};
 #[doc(hidden)]
 pub use component::{
-    get_cookie, Client, ParseError, ProfileError, TaskError, ReqError, ParseResult, Profile, Request, ResError, Response, Task,
+    get_cookie, Client, ParseError, ParseResult, Profile, ProfileError, ReqError, Request,
+    ResError, Response, Task, TaskError,
 };
 #[doc(hidden)]
 pub use engine::{App, ArgApp, ArgProfile, ArgRate, ProfileInfo, Spider};
@@ -166,10 +169,10 @@ pub use engine::{App, ArgApp, ArgProfile, ArgRate, ProfileInfo, Spider};
 pub use plugin::{MiddleWare, PipeLine};
 
 #[doc(hidden)]
+pub use dyer_macros;
+#[doc(hidden)]
 pub use futures::future::{BoxFuture, FutureExt};
 #[doc(hidden)]
 pub use log;
-#[doc(hidden)]
-pub use dyer_macros;
 #[doc(hidden)]
 pub use serde_json as to_json;
