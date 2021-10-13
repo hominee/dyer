@@ -1,0 +1,20 @@
+## ArgApp
+is_skip: true,
+spawn_task_max: 100,
+buf_task: 10000,
+round_entity: 10,
+data_dir: data/
+nap: 5.0,
+join_gap: 7.0,
+
+## ArgProfile
+arg_profile.is_on: false,
+arg_profile.profile_min: 0,
+arg_profile.profile_max: 0,
+
+## ArgRate
+rate.cycle: 600.0,
+rate.load: 99.0,
+rate.rate_low: 0.333,
+rate.err: 0,
+rate.interval: 30.0,
