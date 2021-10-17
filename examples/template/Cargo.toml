@@ -6,9 +6,13 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[lib]
+name = "template"
+path = "src/spider.rs"
+
 [[bin]]
 name = "template"
-path = ".target/main.rs"
+path = "src/bin/template.rs"
 
 [dependencies]
 dyer = { version = "2.0" }

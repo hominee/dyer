@@ -57,7 +57,7 @@
 //! ```bash
 //! cargo install dyer-cli
 //! ```
-//! Once installed, run `dyer-cli` in your terminal or cmd prompt, it prints some info like
+//! Once installed, run `dyer` in your terminal or cmd prompt, it prints some info like
 //! ```bash
 //! Handy tool for dyer
 //! ```
@@ -68,7 +68,7 @@
 //! Dyer-cli generates a template that contains many useful instances and instructions when using dyer with
 //! following code:
 //! ```bash
-//! dyer-cli new myproject
+//! dyer new myproject
 //! ```
 //! It will create a project called `myproject` and the files layout displays:
 //! ```bash
@@ -98,14 +98,14 @@
 //! Then it is your show time, basically there are simple example items(`function`, `enum`, `struct`)
 //! in each file you can follow. After that check your code
 //! ```bash
-//! dyer-cli check
+//! dyer check
 //! ```
 //! if you run it the first time, dyer-cli will download the crates and then check the code.
 //! if some warning happens such as `unused import` or `dead code` the command does a lot for you:
 //! ```bash
-//! dyer-cli fix
+//! dyer fix
 //! ```
-//! however it won't help if some errors occur, if so, you have to debug the code manually.
+//! A wraper of `cargo fix`,  if some warning happens such as `unused import` or `dead code` the command does a lot for you. However it won't help if some errors occur, if so, you have to debug the code manually.
 //!
 //! Edit `config` file in the root directory
 //!
@@ -114,7 +114,7 @@
 //!
 //! When the program compiles, haha run it:
 //! ```bash
-//! dyer-cli run
+//! dyer run
 //! ```
 //! [config Configuration]: crate::engine::arg
 //!
@@ -132,7 +132,7 @@
 //!
 //! ⬜️ Proxy Support
 //!
-//! ⬜️ RobotsTxt exclusion Standard Support
+//! ⬜️ RobotsTxt exclusion Support
 //!
 //! ⬜️ Debugging Support(not bad though for now)
 //!
@@ -149,8 +149,6 @@
 //! [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
 //! [**dyer-cli**]: https://crates.io/crates/dyer-cli
 //! [my github]: https://github.com/HomelyGuy
-
-//#![feature(proc_macro_hygiene)]
 
 pub mod component;
 pub mod engine;

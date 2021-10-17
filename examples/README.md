@@ -48,11 +48,14 @@ Things is a little complicated for Windows users, but it's okay if you follow th
 Run those examples with:
 ```
 cd dyer\examples\simple-demo 
-dyer-cli c 
-dyer-cli run(or cargo run ) 
+dyer c 
+dyer run(or cargo run ) 
 ```	
 
-Note that the folder [`template`], as the name suggests, is a template [`dyer-cli`] created for illustration.
+Note that:
+- all demos take scraping the [quote] site as example
+- the folder [`template`], as the name suggests, is a template [`dyer-cli`] created for illustration.
+- the folder [`dyer-diesel`] contains `SQL` database(Sqlite, PostGresql, Mysql) integration with `dyer-cli` via `diesel`.
 
 
 [`examples`]: https://github.com/HomelyGuy/dyer/tree/master/examples
@@ -61,3 +64,5 @@ Note that the folder [`template`], as the name suggests, is a template [`dyer-cl
 [`rust`]: https://www.rust-lang.org
 [`cargo`]: https://doc.rust-lang.org/cargo/
 [`template`]:  https://github.com/HomelyGuy/dyer/tree/master/examples/template
+[`dyer-diesel`]:  https://github.com/HomelyGuy/dyer/tree/master/examples/dyer-diesel
+[quote]:  https://quotes.toscrape.com/

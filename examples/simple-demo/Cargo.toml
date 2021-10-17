@@ -5,9 +5,13 @@ edition = "2018"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
-[[bin]]
+[lib]
 name = "simple_demo"
-path = ".target/main.rs"
+path = "src/spider.rs"
+
+[[bin]]
+name = "simple-demo"
+path = "src/bin/simple_demo.rs"
 
 [dependencies]
 dyer = { version = "2.0" }
@@ -15,4 +19,3 @@ serde = { version = "*", features = ["derive"] }
 tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
 simple_logger = "*"
 select = "*"
-futures = "*"

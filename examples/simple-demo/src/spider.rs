@@ -1,7 +1,12 @@
-use crate::entity::{Entities, Parg, Targ};
-use crate::parser::*;
-use dyer::{plug, App, ParseResult, ProfileInfo, Request, Response, Spider, Task};
+pub mod entity;
+pub mod middleware;
+pub mod parser;
+pub mod pipeline;
+
 use dyer::dyer_macros::spider;
+use dyer::{plug, App, ParseResult, ProfileInfo, Request, Response, Spider, Task};
+use entity::{Entities, Parg, Targ};
+use parser::*;
 
 type Stem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
 type Btem<E, T, P> = dyn Fn(Response<T, P>) -> ParseResult<E, T, P>;
@@ -10,9 +15,9 @@ type Btem<E, T, P> = dyn Fn(Response<T, P>) -> ParseResult<E, T, P>;
 pub struct MySpider {}
 
 impl Spider<Entities, Targ, Parg> for MySpider {
-    // create an instance 
+    // create an instance
     fn new() -> Self {
-        MySpider{}
+        MySpider {}
     }
 
     // preparation before opening spider
@@ -37,7 +42,7 @@ impl Spider<Entities, Targ, Parg> for MySpider {
         let mut req = Request::<Targ, Parg>::new();
         req.task.uri = "https://quotes.toscrape.com".to_string();
         ProfileInfo {
-            req: Some( req ),
+            req: Some(req),
             parser: None,
         }
     }

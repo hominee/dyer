@@ -1,9 +1,9 @@
 // Parsers that extract entities from Response
 // external tool may be used to achieve that
 
-use crate::entity::{Entities, Parg, Quote, Targ};
-use dyer::{ParseResult, Response, Task};
+use crate::entity::*;
 use dyer::dyer_macros::parser;
+use dyer::{ParseResult, Response, Task};
 
 #[parser]
 pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Parg> {
