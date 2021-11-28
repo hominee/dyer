@@ -1,6 +1,6 @@
 [package]
 name = "dyer-macros"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["captain <captain@captain>"]
 edition = "2018"
 license = "MIT"
