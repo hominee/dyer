@@ -1,29 +1,38 @@
-extern crate brotli2;
-extern crate flate2;
+//! the [Client] that asynchronously executes [Request], with specified `connect-timeout`, `read-timeout` and
+//! `write-timeout`.
+//!
+//! Note that polling the `[Request]`s requires `tokio::runtime`.
 
-use crate::component::{Request, ResError, Response, utils};
-use crate::engine::ArgRate;
+use crate::component::Body;
+use crate::component::{utils, Request, Response};
+use crate::request::Exts;
+use crate::response::InnerResponse;
+use crate::response::MetaResponse;
 use bytes::buf::ext::BufExt;
-use futures::{executor::block_on, future::join_all, Future};
-use hyper::{client::HttpConnector, Body as hBody, Client as hClient, Request as hRequest};
+//use futures_executor::block_on;
+use futures_util::{future::join_all, Future};
+use http::Extensions;
+use hyper::client::HttpConnector;
 use hyper_timeout::TimeoutConnector;
 use hyper_tls::HttpsConnector;
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::io::{BufReader, Read};
-use std::sync::{Arc, Mutex, Once};
+use std::sync::Once;
 
-pub type MClient = hClient<TimeoutConnector<HttpsConnector<HttpConnector>>>;
+type MClient = hyper::Client<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 
-// FIXME add proxy support
-/// the `Client` that asynchronously executes `Request`s, with specified `connect-timeout`, `read-timeout` and
-/// `write-timeout`. Note that polling the `Request`s requires `tokio::runtime` (other asynchronous
-/// runtime, proxy will work in the future).
+// TODO add proxy support
+/// Client that take [Request] and execute, return [Response]
+///
+/// NOTE that not all `content-encoding` supported, it only supports as following
+/// - plain-text (not compressed)
+/// - gzip
+/// - br
+/// - deflate
 pub struct Client;
 
 impl Client {
     /// new static client
-    pub fn new(con: u64, read: u64, write: u64) -> &'static Option<MClient> {
+    fn new(con: u64, read: u64, write: u64) -> &'static MClient {
         static INIT: Once = Once::new();
         static mut VAL: Option<MClient> = None;
         unsafe {
@@ -33,234 +42,110 @@ impl Client {
                 conn.set_connect_timeout(Some(std::time::Duration::from_secs(con)));
                 conn.set_read_timeout(Some(std::time::Duration::from_secs(read)));
                 conn.set_write_timeout(Some(std::time::Duration::from_secs(write)));
-                let clt = hClient::builder().build::<_, hBody>(conn);
-                VAL = Some(clt);
+                let item = hyper::Client::builder().build::<_, hyper::Body>(conn);
+                VAL = Some(item);
             });
-            &VAL
-        }
-    }
-}
-
-impl Client {
-    ///this function require a `hyper::Request` and `hyper::Client` to return the Response
-    pub fn block_exec<F: Future>(f: F) -> F::Output {
-        block_on(f)
-    }
-
-    /// for the sake of convenience, polling the `Request` in no time, is designed for in creating `Spider.entry_profile` or `Spider.entry_task`  Note that:  DO NOT use it in most
-    /// of your code, cz it will slow your whole program down.
-    pub async fn request<T, P>(req: Request<T, P>) -> Response<T, P>
-    where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
-        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    {
-        let mut r = Response::new(Some(&req));
-        match req.init() {
-            None => r,
-            Some(request) => match Client::exec(request, None).await {
-                Ok(res) => {
-                    r.content = res.0;
-                    r.headers = res.1;
-                    r.status = res.2;
-                    r
-                }
-                Err(e) => {
-                    log::error!("failed Request: {:?}", e.desc);
-                    r.msg = Some(e.desc);
-                    r
-                }
-            },
+            VAL.as_ref().unwrap()
         }
     }
 
-    /// the core part of `Client`, as to poll the `Request`, and asynchronously aggregate data from
+    /// this function requires a `hyper::Request` and `hyper::Client` to return the Response
+    /// Poll the `Request`, and asynchronously aggregate data from
     /// server.
     pub async fn exec(
-        req: hRequest<hBody>,
-        args: Option<bool>,
-    ) -> Result<(Option<String>, HashMap<String, String>, usize, f64), ResError> {
-        let client = &Client::new(7, 23, 7).as_ref().unwrap();
+        req: hyper::Request<hyper::Body>,
+    ) -> Result<(hyper::Response<Body>, f64), Box<dyn std::error::Error>> {
+        let client = Client::new(7, 23, 7);
         let tic = utils::now();
         match client.request(req).await {
             Ok(response) => {
                 let toc = utils::now();
                 let gap = toc - tic;
-                match args {
-                    Some(true) | None => {
-                        let (header, bd) = response.into_parts();
-                        let bod = hyper::body::aggregate(bd).await;
-                        match bod {
-                            Ok(body) => {
-                                let mut encoding = "".to_string();
-                                let mut reader = BufReader::new(body.reader());
-                                let status = header.status.as_u16() as usize;
-                                let mut headers: HashMap<String, String> = HashMap::new();
-                                let cookies: Vec<&str> = header
-                                    .headers
-                                    .get_all("set-cookie")
-                                    .iter()
-                                    .map(|s| s.to_str().unwrap())
-                                    .collect();
-                                let cookie = cookies.join("::");
-                                headers.insert("set-cookie".to_string(), cookie);
-                                header
-                                    .headers
-                                    .into_iter()
-                                    .for_each(|(key, value)| match key {
-                                        None => {}
-                                        Some(k) => {
-                                            let kk = k.to_string();
-                                            if kk.to_lowercase() == "content-encoding".to_string() {
-                                                encoding = value.to_str().unwrap().to_string();
-                                            }
-                                            if &kk != "set-cookie" {
-                                                headers.insert(
-                                                    kk,
-                                                    value.to_str().unwrap().to_string(),
-                                                );
-                                            }
-                                        }
-                                    });
-
-                                // Response Content
-                                let mut data = String::new();
-                                if encoding == "gzip".to_string()
-                                    || encoding == "deflate".to_string()
-                                {
-                                    let mut gz = flate2::read::GzDecoder::new(reader);
-                                    gz.read_to_string(&mut data).unwrap();
-                                } else if encoding == "br".to_string() {
-                                    let mut br = brotli2::read::BrotliDecoder::new(reader);
-                                    br.read_to_string(&mut data).unwrap();
-                                } else {
-                                    reader.read_to_string(&mut data).unwrap();
-                                }
-
-                                Ok((Some(data), headers, status, gap))
+                let (header, bd) = response.into_parts();
+                let bod = hyper::body::aggregate(bd).await;
+                match bod {
+                    Ok(body) => {
+                        //let mut data = Bytes::from(body.bytes());
+                        let mut reader = BufReader::new(body.reader());
+                        // Response Content
+                        let mut data = String::new();
+                        //let mut data = Chunk::new();
+                        let encodings = header.headers.get("content-encoding");
+                        let mut encode = 2;
+                        if let Some(t) = encodings {
+                            let t = t.to_str().unwrap();
+                            if ["gzip", "deflate"].contains(&t) {
+                                encode = 0;
+                            } else if t == "br" {
+                                encode = 1;
                             }
-                            Err(e) => Err(ResError {
-                                desc: e.into_cause().unwrap().to_string(),
-                            }),
                         }
-                    }
-                    Some(false) => {
-                        let (header, _) = response.into_parts();
-                        let mut encoding = "".to_string();
-                        let status = header.status.as_u16() as usize;
-                        let mut headers: HashMap<String, String> = HashMap::new();
-                        let cookies: Vec<&str> = header
-                            .headers
-                            .get_all("set-cookie")
-                            .iter()
-                            .map(|s| s.to_str().unwrap())
-                            .collect();
-                        let cookie = cookies.join("::");
-                        headers.insert("set-cookie".to_string(), cookie);
-                        header
-                            .headers
-                            .into_iter()
-                            .for_each(|(key, value)| match key {
-                                None => {}
-                                Some(k) => {
-                                    let kk = k.to_string();
-                                    if kk.to_lowercase() == "content-encoding".to_string() {
-                                        encoding = value.to_str().unwrap().to_string();
-                                    }
-                                    if kk != "set-cookie".to_string() {
-                                        headers.insert(kk, value.to_str().unwrap().to_string());
-                                    }
-                                }
-                            });
 
-                        Ok((None, headers, status, gap))
+                        if encode == 0 {
+                            let mut gz = flate2::read::GzDecoder::new(reader);
+                            gz.read_to_string(&mut data).unwrap();
+                            //gz.read(&mut *data).unwrap();
+                        } else if encode == 1 {
+                            let mut br = brotli2::read::BrotliDecoder::new(reader);
+                            br.read_to_string(&mut data).unwrap();
+                            //br.read(&mut *data).unwrap();
+                        } else {
+                            reader.read_to_string(&mut data).unwrap();
+                            //reader.read(&mut *data).unwrap();
+                        }
+                        let body = Body::from(data);
+                        let res = hyper::Response::from_parts(header, body);
+                        Ok((res, gap))
                     }
+                    Err(e) => Err(e.into()),
                 }
             }
             Err(e) => {
-                let err = if let Some(msg) = e.into_cause() {
-                    msg.to_string()
-                } else {
-                    "Unknow Error".to_string()
-                };
-                log::error!("cannot exec the request caused by {}.", err);
-                Err(ResError { desc: err })
+                log::error!("Failed request ",);
+                Err(e.into())
             }
         }
     }
 
     /// execute only one `Request` for common use.
-    pub async fn exec_one<T, P>(req: Request<T, P>) -> ( Response<T, P>, f64 )
-    where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
-        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    {
-        let mut r = Response::new(Some(&req));
-        let request = req.init().unwrap();
-        let response = Client::exec(request, None).await;
-
+    pub async fn exec_one(req: Request) -> Result<Response, MetaResponse> {
+        let (mta, request, ext_t, ext_p) = req.into();
+        let mut mta = MetaResponse::from(mta);
+        let response = Client::exec(request).await;
         match response {
             Ok(data) => {
-                r.content = data.0;
-                r.headers.extend(data.1);
-                r.status = data.2;
-                (r, data.3)
+                let (parts, body) = data.0.into_parts();
+                let inn = InnerResponse {
+                    status: parts.status,
+                    version: parts.version,
+                    headers: parts.headers,
+                    extensions: Exts(ext_t, ext_p, Extensions::new(), parts.extensions),
+                };
+                mta.info.gap = data.1;
+                let ret = Response::from_parts(inn, body, mta);
+                Ok(ret)
             }
-            Err(e) => {
-                r.msg = Some(e.desc);
-                ( r, f64::NAN )
-            }
+            Err(_) => Err(mta),
         }
     }
 
+    /// A wrapper of futures's function block_on
+    ///
+    /// blocking the current thread and execute the future
+    ///
+    /// NOTE that avoid using this if not necessary
+    /// spawn a task or use join_all instead
+    ///
+    /*
+     *pub fn block_exec<F: Future>(f: F) -> F::Output {
+     *    block_on(f)
+     *}
+     */
+
+    /// A wrapper of futures's function join_all
+    ///
     /// execute multiple `Request` for common use.
-    pub async fn exec_all<T, P>(
-        mut reqs: Vec<Request<T, P>>,
-        result: Arc<Mutex<Vec<Response<T, P>>>>,
-        rate: Arc<Mutex<ArgRate>>,
-    ) where
-        T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Send,
-        P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    {
-        let mut rs = Vec::new();
-        let mut ress = Vec::new();
-        let mut futs = Vec::new();
-        let len_reqs = reqs.len();
-        for _ in 0..len_reqs {
-            let req = reqs.pop().unwrap();
-            rs.push(Response::new(Some(&req)));
-            match req.init() {
-                Some(r) => futs.push(Client::exec(r, None)),
-                None => {
-                    rs.remove(0);
-                    log::error!("cannot init Request into hyper::Request");
-                }
-            }
-        }
-
-        let mut res = Client::join_all(futs).await;
-        let len_rs = rs.len();
-        for _ in 0..len_rs {
-            let mut r = rs.pop().unwrap();
-            let d = res.pop().unwrap();
-            match d {
-                Ok(da) => {
-                    r.content = da.0;
-                    r.headers = da.1;
-                    r.status = da.2;
-                    ress.push(r);
-                    rate.lock().unwrap().stamps.push(da.3);
-                }
-                Err(e) => {
-                    r.msg = Some(e.desc);
-                    rate.lock().unwrap().err += 1;
-                    ress.push(r);
-                }
-            }
-        }
-        result.lock().unwrap().extend(ress);
-    }
-
-    /// wrapper of futures::future::join_all
+    ///
     pub async fn join_all<I>(i: I) -> Vec<<<I as IntoIterator>::Item as Future>::Output>
     where
         I: IntoIterator,

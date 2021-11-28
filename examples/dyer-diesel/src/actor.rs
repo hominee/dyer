@@ -3,60 +3,52 @@ extern crate diesel;
 extern crate dotenv;
 extern crate select;
 
+pub mod affix;
 pub mod entity;
 pub mod middleware;
 pub mod parser;
 pub mod pipeline;
 pub mod schema;
 
-use dyer::dyer_macros::spider;
-use dyer::*;
-use entity::{Entities, Parg, Targ};
+use affix::*;
+use dyer::{Actor, *};
+use entity::*;
 use parser::*;
+use pipeline::*;
 
-type Stem<U> = Result<U, Box<dyn std::error::Error + Send + Sync>>;
-type Btem<E, T, P> = dyn Fn(Response<T, P>) -> ParseResult<E, T, P>;
-
-#[spider]
-pub struct MySpider {
+#[dyer::actor]
+pub struct MyActor {
     start_url: String,
 }
 
-impl Spider<Entities, Targ, Parg> for MySpider {
-    fn new() -> Self {
-        MySpider {
+#[dyer::async_trait]
+impl Actor<Entities, Aff> for MyActor {
+    async fn new() -> Self {
+        MyActor {
             start_url: "https://quotes.toscrape.com".into(),
         }
     }
 
-    fn open_spider(&self, _app: &mut App<Entities, Targ, Parg>) {}
+    async fn open_actor(&self, _app: &mut App<Entities>) {}
 
-    fn entry_task(&self) -> Stem<Vec<Task<Targ>>> {
-        let mut tsk = Task::new();
-        tsk.uri = self.start_url.clone();
-        tsk.parser = "parse_quote".to_string();
-        Ok(vec![tsk])
+    async fn entry_task(&self) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
+        let task = Task::get(&self.start_url)
+            .parser(parse_quote)
+            .body(Body::empty(), "quote".into())
+            .unwrap();
+        Ok(vec![task])
     }
 
-    fn entry_profile<'a>(&self) -> ProfileInfo<'a, Targ, Parg> {
-        let mut req = Request::<Targ, Parg>::new();
-        req.task.uri = "https://quotes.toscrape.com".to_string();
-        ProfileInfo {
-            req: Some(req),
-            parser: None,
-        }
+    async fn entry_affix(&self) -> Option<Aff> {
+        None
     }
 
-    fn get_parser<'a>(&self, ind: &str) -> Option<&'a Btem<Entities, Targ, Parg>> {
-        plug!(get_parser(ind; parse_quote))
-    }
-
-    fn close_spider(&self, _app: &mut App<Entities, Targ, Parg>) {
+    async fn close_actor(&self, _app: &mut App<Entities>) {
         use crate::entity::Quote;
         use crate::schema::quotes::dsl::*;
         use diesel::prelude::*;
 
-        let conn = dyer::Client::block_exec(crate::pipeline::establish_connection());
+        let conn = establish_connection(_app).await;
         quotes
             .filter(author.eq("Mark Twain"))
             .limit(7)

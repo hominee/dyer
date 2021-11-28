@@ -1,53 +1,111 @@
-use std::collections::HashMap;
+//! some utilities that useful and convenience for dealing with data flow.
+//!
+use crate::{component::Poly, engine::vault::Vault};
+use std::collections::hash_map::DefaultHasher;
+use std::convert::TryInto;
+use std::fs;
 use std::hash::{Hash, Hasher};
+use std::io::Write;
+use std::io::{BufRead, BufReader};
 
-/// some utilities that useful and convenience for dealing with data flow.
+/// load unfinished or extra data
+pub fn load<T>(
+    path: &str,
+    f: Option<&Box<dyn Fn(&str) -> Poly + Send>>,
+    //f: Option<&'a dyn Fn(&'a str) -> T>,
+) -> Vec<T>
+where
+    Poly: TryInto<T>,
+{
+    let mut data = Vec::new();
+    if let Some(ff) = f {
+        let file = fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create(true)
+            .open(path)
+            .unwrap();
+        for line in BufReader::new(&file).lines() {
+            let s = line.unwrap().to_string();
+            if let Ok(item) = ff(&s).try_into() {
+                data.push(item);
+            }
+        }
+    } else {
+        log::error!("Session Loader Not Provided");
+    }
+    data
+}
 
-pub fn get_cookie(data: &str) -> HashMap<String, String> {
-    let stop_word = ["path", "expires", "domain", "httponly"];
-    let mut cookie = HashMap::new();
-    let vals = data.split("::").collect::<Vec<&str>>();
-    vals.into_iter().for_each(|val| {
-        let v_str: Vec<&str> = val.split(";").map(|s| s.trim()).collect();
-        v_str.into_iter().for_each(|pair| {
-            let mut ind = true;
-            let tmp: Vec<&str> = pair
-                .split("=")
-                .filter(|c| {
-                    if !stop_word.contains(&c.to_lowercase().trim()) {
-                        true
-                    } else {
-                        ind = false;
-                        false
-                    }
-                })
-                .collect();
-            if ind {
-                cookie.insert(tmp[0].to_string(), tmp[1..].join("="));
+/// store unfinished or extra data,
+pub(crate) fn stored<I, T>(
+    path: &str,
+    ens: &mut Vault<I>,
+    f: Option<&Box<dyn for<'a> Fn(Poly, &'a ()) -> &'a str + Send>>,
+    //f: Option<&'a dyn Fn(I::Item) -> &'a str>,
+) where
+    I: std::iter::IntoIterator<Item = T> + Default,
+    Poly: From<T>,
+{
+    if let Some(ff) = f {
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(path)
+            .unwrap();
+        let buf = ens.take();
+        let mut cows: Vec<std::borrow::Cow<str>> = Vec::new();
+        for en in buf.into_iter() {
+            let item = (ff)(en.into(), &());
+            cows.push(std::borrow::Cow::Borrowed(item));
+            cows.push(std::borrow::Cow::Borrowed("\n"));
+        }
+
+        cows.into_iter().for_each(|cow| match cow {
+            std::borrow::Cow::Owned(s) => {
+                file.write(s.as_bytes()).unwrap();
+            }
+            std::borrow::Cow::Borrowed(s) => {
+                file.write(s.as_bytes()).unwrap();
             }
         });
-    });
-    cookie
+    } else {
+        log::error!("Session Storer Not Provided");
+    }
 }
 
+/// handy tool to get the instant time of system time
 pub fn now() -> f64 {
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs_f64()
-    
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs_f64()
 }
 
-
-///generate hash 
-pub(crate) fn hash<I>(salt: I) -> u64
-where 
+/// generate hash via Iterator
+pub fn hash_iter<I>(salt: I) -> u64
+where
     I: std::iter::IntoIterator,
     I::Item: Hash,
 {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    let mut hasher = DefaultHasher::new();
     salt.into_iter().for_each(|ele| ele.hash(&mut hasher));
-     hasher.finish()
-    
+    hasher.finish()
+}
+/// hash a hash-able object
+pub fn hash<I>(salt: I) -> u64
+where
+    I: Hash,
+{
+    let mut hasher = DefaultHasher::new();
+    salt.hash(&mut hasher);
+    hasher.finish()
 }
 
+/// basically re-construct a slice from ptr
+///
+/// generally speaking, it is used to manipulate the lifetime
+pub fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+    unsafe { std::slice::from_raw_parts(ptr, len) }
+}

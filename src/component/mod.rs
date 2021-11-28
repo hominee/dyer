@@ -1,4 +1,4 @@
-//! Instructions of components including [client], [profile], [request], [response], [task], [utils].
+//! Instructions of components including [client], [affix], [request], [response], [task], [utils].
 //!
 //! # OverView
 //!
@@ -11,88 +11,150 @@
 //! [hash]: crate::component::utils::hash
 //! [now]: crate::component::utils::now
 //! [client]: crate::component::client
-//! [profile]: crate::component::profile
+//! [affix]: crate::component::affix
 //! [request]: crate::component::request
 //! [response]: crate::component::response
 //! [task]: crate::component::task
 //! [utils]: crate::component::utils
 //!
+pub mod affix;
+pub mod body;
 pub mod client;
-pub mod profile;
+pub mod couple;
+pub mod info;
+pub mod parsed;
 pub mod request;
 pub mod response;
 pub mod task;
 pub mod utils;
 
+use std::convert::TryInto;
+
+/// fundamental data struct
+pub enum Poly {
+    Task(Task),
+    Affix(Affix),
+    Request(Request),
+    Couple(Couple),
+    Response(Response),
+}
+
+impl From<Task> for Poly {
+    fn from(task: Task) -> Self {
+        Self::Task(task)
+    }
+}
+impl TryInto<Task> for Poly {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<Task, Self::Error> {
+        if let Poly::Task(task) = self {
+            Ok(task)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid Cast to Task",
+            ))
+        }
+    }
+}
+
+impl From<Affix> for Poly {
+    fn from(affix: Affix) -> Self {
+        Self::Affix(affix)
+    }
+}
+impl TryInto<Affix> for Poly {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<Affix, Self::Error> {
+        if let Poly::Affix(affix) = self {
+            Ok(affix)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid Cast to Affix",
+            ))
+        }
+    }
+}
+
+impl From<Request> for Poly {
+    fn from(request: Request) -> Self {
+        Self::Request(request)
+    }
+}
+impl TryInto<Request> for Poly {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<Request, Self::Error> {
+        if let Poly::Request(request) = self {
+            Ok(request)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid Cast to Request",
+            ))
+        }
+    }
+}
+
+impl From<(u64, Couple)> for Poly {
+    fn from(couple: (u64, Couple)) -> Self {
+        Self::Couple(couple.1)
+    }
+}
+impl TryInto<(u64, Couple)> for Poly {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<(u64, Couple), Self::Error> {
+        if let Poly::Couple(couple) = self {
+            Ok((couple.id, couple))
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid Cast to Couple",
+            ))
+        }
+    }
+}
+
+impl From<Response> for Poly {
+    fn from(response: Response) -> Self {
+        Self::Response(response)
+    }
+}
+impl TryInto<Response> for Poly {
+    type Error = std::io::Error;
+
+    fn try_into(self) -> Result<Response, Self::Error> {
+        if let Poly::Response(response) = self {
+            Ok(response)
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid Cast to Response",
+            ))
+        }
+    }
+}
+
+#[doc(hidden)]
+pub use affix::Affix;
+#[doc(hidden)]
+pub use body::{Body, Chunk, Kind};
+pub use bytes::{Buf, Bytes};
 #[doc(hidden)]
 pub use client::Client;
 #[doc(hidden)]
-pub use profile::Profile;
+pub use couple::Couple;
 #[doc(hidden)]
-pub use request::Request;
+pub use info::Info;
 #[doc(hidden)]
-pub use response::{ParseResult, Response};
+pub use parsed::Parsed;
 #[doc(hidden)]
-pub use task::Task;
+pub use request::{Exts, InnerRequest, MetaRequest, Request, RequestBuilder};
 #[doc(hidden)]
-pub use utils::get_cookie;
-
-use std::error::Error;
-use std::fmt::Debug;
-
-#[derive(Debug)]
-pub struct ProfileError {
-    pub desc: String,
-}
-impl std::fmt::Display for ProfileError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Profile Error.")
-    }
-}
-impl Error for ProfileError {}
-
-#[derive(Debug)]
-pub struct ParseError {
-    pub desc: String,
-}
-impl std::fmt::Display for ParseError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Parse Error.")
-    }
-}
-impl Error for ParseError {}
-
-#[derive(Debug)]
-pub struct ReqError {
-    pub desc: String,
-}
-impl std::fmt::Display for ReqError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Request Error")
-    }
-}
-impl Error for ReqError {}
-
-#[derive(Debug)]
-pub struct ResError {
-    pub desc: String,
-}
-impl std::fmt::Display for ResError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Response Error.")
-    }
-}
-impl Error for ResError {}
-unsafe impl Send for ResError {}
-unsafe impl Sync for ResError {}
-
-#[derive(Debug)]
-pub struct TaskError {
-    pub desc: String,
-}
-impl std::fmt::Display for TaskError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Task Error.")
-    }
-}
-impl Error for TaskError {}
+pub use response::{InnerResponse, MetaResponse, Response, ResponseBuilder};
+#[doc(hidden)]
+pub use task::{InnerTask, MetaTask, Task, TaskBuilder};

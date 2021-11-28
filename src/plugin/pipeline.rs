@@ -1,110 +1,394 @@
-use futures::future::{FutureExt, LocalBoxFuture};
-use std::sync::{Arc, Mutex};
-use typed_builder::TypedBuilder;
+//! the end of data flow, plugin that consume the extracted `Entity`, In general, the default
+//! method does nothing, and customization is requird to store the data. An example:
+//!
+//! ```no_run
+//! # use crate::dyer::{plug,engine::vault::Vault, PipeLine};
+//! #
+//! pub struct E;
+//! pub struct C;
+//! #
+//! # async fn pl_open() ->  Option<&'a C> {
+//! #     None
+//! # }
+//! # async fn pl_close() {}
+//! # async fn pl_item(_item: Vec<E>) {}
+//! # async fn pl_yerr(_item: Vec<String>) {}
+//!
+//! // to initialize a `PipeLine`
+//! let pipeline = PipeLine::<E,C>::builder()
+//!     .initializer(&pl_close)
+//!     .disposer(&pl_close)
+//!     .entity(&pl_item)
+//!     .yerr(&pl_yerr)
+//!     .build("pipeline_id_here".into());
+//! // pipeline is created with default `rank` 0
+//! // if you want it has higher privilege to be executed
+//! // increase it
+//! assert_eq!(pipeline.rank(), 0);
+//! ```
 
-/// default method used when open the `PipeLine`
-async fn pl_open<'a, C>() -> &'a Option<C>
-where
-    C: 'a,
-{
-    &None
+use crate::component::MetaResponse;
+use crate::{App, BoxFuture, Response};
+use http::Extensions;
+
+macro_rules! builder {
+    ($f:ident, $var: ident, $hd: ident, $ref:ident, $ret: ty, $bd: expr, $($item:ty,)*) => {
+        #[doc = "Set the `"]
+        #[doc = stringify!($hd)]
+        #[doc = "` of `PipeLine`, if not called, the default value is `None`"]
+        #[doc = ""]
+        #[doc = "# Examples"]
+        #[doc = ""]
+        #[doc = "```rust"]
+        #[doc = "# use dyer::pipeline::*;"]
+        #[doc = concat!("async fn ", stringify!($hd), "(", stringify!($(_: &mut Vec<$item>, )*), "_: &mut App<E>) {}" )]
+        #[doc = concat!("let pipeline = ", stringify!($bd))]
+        #[doc = concat!("    ", stringify!(.$f),"(&", stringify!($hd), ")" ) ]
+        #[doc = "    .build(\"marker\".into());"]
+        #[doc = stringify!(assert!(pipeline.$hd.is_some()) )]
+        #[doc = "```"]
+        pub fn $f(
+            mut self,
+            $var: &'pl dyn for<'a> Fn($(Vec<$item>,)* &'a mut App<E>) -> BoxFuture<'a, $ret>,
+        ) -> Self
+        {
+            self.$hd = Some($var );
+            self
+        }
+
+        #[doc = "Get the shared reference of `"]
+        #[doc = stringify!($hd)]
+        #[doc = "` of `PipeLine`, if not set before, `None` is returned"]
+        #[doc = ""]
+        #[doc = "# Examples"]
+        #[doc = ""]
+        #[doc = "```rust"]
+        #[doc = "# use dyer::pipeline::*;"]
+        #[doc = concat!("async fn ", stringify!($hd), "(", stringify!($(_: &mut Vec<$item>, )*), "_: &mut App<E>) {}" )]
+        #[doc = concat!("let pipeline = ", stringify!($bd))]
+        #[doc = concat!("    ", stringify!(.$f),"(&", stringify!($hd), ")" ) ]
+        #[doc = "    .build(\"marker\".into());"]
+        #[doc = stringify!(assert_eq!(pipeline.$ref(), Some($hd)) )]
+        #[doc = "```"]
+        pub fn $ref(&self) ->
+             Option<&'pl dyn for<'a> Fn($(Vec<$item>,)* &'a mut App<E>) -> BoxFuture<'a, $ret>>
+             //Option<&'pl dyn for<'a> Fn(&'a mut Vec<$item>, &'a mut App<E>) -> BoxFuture<'a, ()>>
+        {
+            self.$hd
+        }
+    };
 }
 
-/// default method used when close the `PipeLine`
-async fn pl_close<'a, I, C>()
-where
-    I: Send + Sync + std::fmt::Debug,
-    C: 'a,
-{
-    let _c = std::marker::PhantomData::<C>;
+/// Represents a medium that manipulates the collected data structure of [App]
+///
+/// In practise, it processes the collected data and consume it
+/// according to the `marker` and `rank`
+pub struct PipeLine<'pl, E, C> {
+    pub(crate) initializer: Option<&'pl dyn for<'a> Fn(&'a mut App<E>) -> BoxFuture<'a, Option<C>>>,
+
+    pub(crate) disposer: Option<&'pl dyn for<'a> Fn(&'a mut App<E>) -> BoxFuture<'a, ()>>,
+
+    pub(crate) process_entity:
+        Option<&'pl dyn for<'a> Fn(Vec<E>, &'a mut App<E>) -> BoxFuture<'a, ()>>,
+
+    pub(crate) process_yerr: Option<
+        &'pl dyn for<'a> Fn(
+            Vec<Result<Response, MetaResponse>>,
+            &'a mut App<E>,
+        ) -> BoxFuture<'a, ()>,
+    >,
+    pub marker: String,
+    pub rank: i16,
+    /// additional arguments for extensive application
+    pub extensions: Extensions,
 }
 
-/// default method used to consume extracted Entities
-async fn pl_item<I>(item: &mut Arc<Mutex<Vec<I>>>)
-where
-    I: Send + Sync + std::fmt::Debug,
-{
-    let len = item.lock().unwrap().len();
-    log::info!("process {} item", len);
-    for _ in 0..len {
-        let itm = item.lock().unwrap().pop().unwrap();
-        println!("pipeline out item: {:?}", itm)
+impl<'pl, E, C> PipeLine<'pl, E, C> {
+    /// Create an instance of `PipeLinesBuilder` that used to build a `PipeLine`  
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
+    /// let pipeline = Pipeline::builder()
+    ///     .process_entity(process_entity)
+    ///     .build("marker".into());
+    /// ```
+    pub fn builder() -> PipeLineBuilder<'pl, E, C> {
+        PipeLineBuilder::new()
     }
-}
 
-/// default method used to process parsed failure
-async fn pl_yerr(item: &mut Arc<Mutex<Vec<String>>>) {
-    let len = item.lock().unwrap().len();
-    log::info!("process {} yield_err", len);
-    for _ in 0..len {
-        let itm = item.lock().unwrap().pop().unwrap();
-        println!("pipeline out item: {:?}", itm)
+    /// get the rank of `PipeLine`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
+    /// let pipeline = Pipeline::builder()
+    ///     .process_entity(process_entity)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.rank(), 0);
+    /// ```
+    pub fn rank(&self) -> i16 {
+        self.rank
     }
+
+    /// get mutable reference to rank of `PipeLine`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
+    /// let pipeline = Pipeline::builder()
+    ///     .process_entity(process_entity)
+    ///     .build("marker".into());
+    /// pipeline.rank_mut() = 3;
+    /// assert_eq!(pipeline.rank(), 3);
+    /// ```
+    pub fn rank_mut(&mut self) -> &mut i16 {
+        &mut self.rank
+    }
+
+    /// mutate the extensions of `PipeLine`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// let mut pipeline = Pipeline::builder()
+    ///     .extensions(1i32)
+    ///     .build("marker".into());
+    /// pipeline.extension_mut().insert(2i32);
+    /// ```
+    pub fn extensions_mut(&mut self) -> &mut Extensions {
+        &mut self.extensions
+    }
+
+    /// get extensions of `PipeLine`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// let pipeline = Pipeline::builder()
+    ///     .extensions(1i32)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.extensions().get::<i32>(), 1);
+    /// ```
+    pub fn extensions(&self) -> &Extensions {
+        &self.extensions
+    }
+
+    builder!(
+        initializer_mut,
+        initials,
+        initializer,
+        initializer,
+        Option<C>,
+        PipeLines::builder(),
+    );
+    builder!(
+        disposer_mut,
+        dispose,
+        disposer,
+        disposer,
+        (),
+        PipeLines::builder(),
+    );
+    builder!(
+        entity_mut,
+        entity,
+        process_entity,
+        entity,
+        (),
+        PipeLines::builder(),
+        E,
+    );
+    builder!(
+        yerr_mut,
+        yerr,
+        process_yerr,
+        yerr,
+        (),
+        PipeLines::builder(),
+        Result<Response, MetaResponse>,
+    );
 }
 
-/// the end of data flow, plugin that consume the extracted `Entity`, In general, the default
-/// method does nothing, and customization is requird to store the data. An example:
-/// ```
-/// use futures::future::FutureExt;
-/// # use std::sync::{Arc, Mutex};
-/// # use crate::dyer::{plug, PipeLine};
-/// #
-/// # #[derive(std::fmt::Debug)]
-/// # pub struct I;
-/// # unsafe impl Send for I {}
-/// # unsafe impl Sync for I {}
-/// # #[derive(std::fmt::Debug)]
-/// # pub struct C;
-/// #
-/// # async fn pl_open<'a>() -> &'a Option<C> {
-/// #     &None
-/// # }
-/// # async fn pl_close() {}
-/// # async fn pl_item(_item: &mut Arc<Mutex<Vec<I>>>) {}
-/// # async fn pl_yerr(_item: &mut Arc<Mutex<Vec<String>>>) {}
+/// Serve as an medium to create an instance of [PipeLine]
 ///
-/// // the recommanded way to initialize a `PipeLine` by means of macro `plug!`
-/// plug! {
-///     PipeLine<I, C> {
-///         close_pipeline: pl_close,
-///         //open_pipeline:  pl_open,
-///         process_entity:   pl_item,
-///         process_yerr:   pl_yerr,
-///     }
-/// };
-///
-/// // the the second way is also at ease
-/// let mut pl = PipeLine::<I, C>::builder().build();
-/// pl.close_pipeline = &|| pl_close().boxed_local();
-///
-/// // the traditional way is supported as well
-/// PipeLine::<I, C> {
-///     open_pipeline: &|| pl_open().boxed_local(),
-///     close_pipeline: &|| pl_close().boxed_local(),
-///     process_entity: &|items: &mut Arc<Mutex<Vec<I>>>| pl_item(items).boxed_local(),
-///     process_yerr: &|items: &mut Arc<Mutex<Vec<String>>>| pl_yerr(items).boxed_local(),
-///     };
-/// ```
-/// the member not specified is by default assigned to the default method
-#[derive(TypedBuilder)]
-pub struct PipeLine<'pl, I, C>
+/// This type can be used to construct an instance or [PipeLine]
+/// through a builder-like pattern.
+pub struct PipeLineBuilder<'pl, E, C>
 where
-    C: 'pl,
-    I: Send + Sync + std::fmt::Debug + 'pl,
+    C: 'static,
 {
-    #[builder(default_code = r#"& | | pl_open().boxed_local() "#)]
-    pub open_pipeline: &'pl dyn Fn() -> LocalBoxFuture<'pl, &'pl Option<C>>,
+    initializer: Option<&'pl dyn for<'a> Fn(&'a mut App<E>) -> BoxFuture<'a, Option<C>>>,
 
-    #[builder(default_code = r#"&|  | pl_close::<I, C>().boxed_local() "#)]
-    pub close_pipeline: &'pl dyn Fn() -> LocalBoxFuture<'pl, ()>,
+    disposer: Option<&'pl dyn for<'a> Fn(&'a mut App<E>) -> BoxFuture<'a, ()>>,
 
-    #[builder(
-        default_code = r#" &|items: &mut Arc<Mutex<Vec<I>>>| pl_item(items).boxed_local() "#
-    )]
-    pub process_entity: &'pl dyn Fn(&mut Arc<Mutex<Vec<I>>>) -> LocalBoxFuture<'_, ()>,
+    process_entity: Option<&'pl dyn for<'a> Fn(Vec<E>, &'a mut App<E>) -> BoxFuture<'a, ()>>,
 
-    #[builder(
-        default_code = r#" &|yerrs: &mut Arc<Mutex<Vec<String>>>| pl_yerr(yerrs).boxed_local() "#
-    )]
-    pub process_yerr: &'pl dyn Fn(&mut Arc<Mutex<Vec<String>>>) -> LocalBoxFuture<'_, ()>,
+    process_yerr: Option<
+        &'pl dyn for<'a> Fn(
+            Vec<Result<Response, MetaResponse>>,
+            &'a mut App<E>,
+        ) -> BoxFuture<'a, ()>,
+    >,
+    rank: i16,
+    extensions: Extensions,
+}
+
+impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
+    /// Create an instance of `PipeLine`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeline::*;
+    /// let pipeline = PipeLineBuilder::new();
+    /// assert!(pipeline.entity_ref().is_none());
+    /// ```
+    pub fn new() -> Self {
+        Self {
+            initializer: None,
+            process_entity: None,
+            process_yerr: None,
+            disposer: None,
+            rank: 0,
+            extensions: Extensions::new(),
+        }
+    }
+
+    /// Consume it and return an instance of PipeLine
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeline::*;
+    /// async fn process_entity(_: &mut Vec<E>, _: &mut App<E>) {}
+    /// let pipeline = PipeLineBuilder::new();
+    ///     .entity(process_entity)
+    ///     .build("marker".into());
+    /// ```
+    pub fn build(self, marker: String) -> PipeLine<'pl, E, C> {
+        let all = self.initializer.is_some()
+            || self.disposer.is_some()
+            || self.process_yerr.is_some()
+            || self.process_entity.is_some();
+        assert!(all, "None of pipeline has been specified");
+        PipeLine {
+            initializer: self.initializer,
+            disposer: self.disposer,
+            process_entity: self.process_entity,
+            process_yerr: self.process_yerr,
+            marker,
+            rank: self.rank,
+            extensions: self.extensions,
+        }
+    }
+
+    /// set the extensions of `PipeLineBuilder`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// let pipeline = Pipeline::builder()
+    ///     .extensions(1i32)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.extensions().get::<i32>(), 1);
+    /// ```
+    pub fn extensions<S>(mut self, extensions: S) -> Self
+    where
+        S: std::any::Any + Send + Sync + 'static,
+    {
+        self.extensions.insert(extensions);
+        self
+    }
+
+    /// get extensions of `PipeLineBuilder`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// let pipeline = Pipeline::builder()
+    ///     .extensions(1i32)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.extensions_ref().get::<i32>(), 1);
+    /// ```
+    pub fn extensions_ref(&self) -> &Extensions {
+        &self.extensions
+    }
+
+    /// set the rank of `PipeLineBuilder`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// let pipeline = Pipeline::builder()
+    ///     .rank(1)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.rank(), 1);
+    /// ```
+    pub fn rank(mut self, rank: i16) -> Self {
+        self.rank = rank;
+        self
+    }
+
+    /// get rank of `PipeLineBuilder`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::pipeLine::*;
+    /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
+    /// let pipeline = Pipeline::builder()
+    ///     .rank(1)
+    ///     .build("marker".into());
+    /// assert_eq!(pipeline.rank_ref(), 1);
+    /// ```
+    pub fn rank_ref(&self) -> i16 {
+        self.rank
+    }
+
+    builder!(
+        initializer,
+        initials,
+        initializer,
+        initializer_ref,
+        Option<C>,
+        PipeLines::builder(),
+    );
+    builder!(
+        disposer,
+        dispose,
+        disposer,
+        disposer_ref,
+        (),
+        PipeLines::builder(),
+    );
+    builder!(
+        entity,
+        entity,
+        process_entity,
+        entity_ref,
+        (),
+        PipeLines::builder(),
+        E,
+    );
+    builder!(
+        yerr,
+        yerr,
+        process_yerr,
+        yerr_ref,
+        (),
+        PipeLines::builder(),
+        Result<Response, MetaResponse>,
+    );
 }

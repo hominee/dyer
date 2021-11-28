@@ -9,11 +9,10 @@ use diesel::{
     Insertable,
     Queryable,
 };
-use dyer::dyer_macros::entity;
 use serde::{Deserialize, Serialize};
 use std::io::Write;
 
-#[entity(entities)]
+#[dyer::entity]
 #[derive(Serialize, Debug, Clone)]
 pub enum Entities {
     Quote(Quote),
@@ -29,21 +28,13 @@ pub struct Quote {
     pub tags: Option<Tags>,
 }
 
-#[entity(targ)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Targ {}
-
-#[entity(parg)]
-#[derive(Deserialize, Serialize, Debug, Clone)]
-pub struct Parg {}
-
 #[derive(Deserialize, AsExpression, FromSqlRow, Serialize, Debug, Clone)]
 #[sql_type = "crate::schema::sql_types::Tags"]
 pub struct Tags(pub Vec<String>);
 
 impl ToSql<crate::schema::sql_types::Tags, DB_sqlite> for Tags {
     fn to_sql<W: Write>(&self, out: &mut Output<W, DB_sqlite>) -> serialize::Result {
-        let r = dyer::to_json::to_string(self);
+        let r = serde_json::to_string(self);
         if let Ok(byte) = r {
             out.write_all(byte.as_bytes())?;
             Ok(IsNull::No)
@@ -56,7 +47,7 @@ impl ToSql<crate::schema::sql_types::Tags, DB_sqlite> for Tags {
 impl FromSql<crate::schema::sql_types::Tags, DB_sqlite> for Tags {
     fn from_sql(bytes: Option<&<DB_sqlite as Backend>::RawValue>) -> deserialize::Result<Self> {
         if let Some(byte) = bytes {
-            let r = dyer::to_json::from_slice::<Tags>(byte.read_blob());
+            let r = serde_json::from_slice::<Tags>(byte.read_blob());
             if let Ok(item) = r {
                 return Ok(item);
             }
@@ -67,7 +58,7 @@ impl FromSql<crate::schema::sql_types::Tags, DB_sqlite> for Tags {
 
 impl ToSql<crate::schema::sql_types::Tags, DB_pg> for Tags {
     fn to_sql<W: Write>(&self, out: &mut Output<W, DB_pg>) -> serialize::Result {
-        let r = dyer::to_json::to_string(self);
+        let r = serde_json::to_string(self);
         if let Ok(byte) = r {
             out.write_all(byte.as_bytes())?;
             Ok(IsNull::No)
@@ -80,7 +71,7 @@ impl ToSql<crate::schema::sql_types::Tags, DB_pg> for Tags {
 impl FromSql<crate::schema::sql_types::Tags, DB_pg> for Tags {
     fn from_sql(bytes: Option<&<DB_pg as Backend>::RawValue>) -> deserialize::Result<Self> {
         if let Some(byte) = bytes {
-            let r = dyer::to_json::from_slice::<Tags>(byte);
+            let r = serde_json::from_slice::<Tags>(byte);
             if let Ok(item) = r {
                 return Ok(item);
             }
@@ -91,7 +82,7 @@ impl FromSql<crate::schema::sql_types::Tags, DB_pg> for Tags {
 
 impl ToSql<crate::schema::sql_types::Tags, DB_mysql> for Tags {
     fn to_sql<W: Write>(&self, out: &mut Output<W, DB_mysql>) -> serialize::Result {
-        let r = dyer::to_json::to_string(self);
+        let r = serde_json::to_string(self);
         if let Ok(byte) = r {
             out.write_all(byte.as_bytes())?;
             Ok(IsNull::No)
@@ -104,7 +95,7 @@ impl ToSql<crate::schema::sql_types::Tags, DB_mysql> for Tags {
 impl FromSql<crate::schema::sql_types::Tags, DB_mysql> for Tags {
     fn from_sql(bytes: Option<&<DB_mysql as Backend>::RawValue>) -> deserialize::Result<Self> {
         if let Some(byte) = bytes {
-            let r = dyer::to_json::from_slice::<Tags>(byte);
+            let r = serde_json::from_slice::<Tags>(byte);
             if let Ok(item) = r {
                 return Ok(item);
             }

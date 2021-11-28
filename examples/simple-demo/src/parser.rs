@@ -3,17 +3,18 @@
 
 use crate::entity::*;
 use dyer::dyer_macros::parser;
-use dyer::{ParseResult, Response, Task};
+use dyer::*;
+use dyer::{component::Buf, Parsed, Response, Task};
 
 #[parser]
-pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Parg> {
-    let mut r = ParseResult::new();
-    //r.profile.push(res.profile);
-    if res.content.is_none() {
+pub fn parse_quote(res: Response) -> Parsed<Entities> {
+    let mut r = Parsed::new();
+    if res.body.is_empty() {
         return r;
     }
     let mut quotes = Vec::new();
-    let doc = select::document::Document::from(res.content.as_ref().unwrap().as_str());
+    let s = std::str::from_utf8(res.body.bytes()).unwrap();
+    let doc = select::document::Document::from(s);
     for node in doc.find(select::predicate::Class("quote")) {
         let text = node
             .find(select::predicate::Class("text"))
@@ -44,9 +45,11 @@ pub fn parse_quote(res: Response<Targ, Parg>) -> ParseResult<Entities, Targ, Par
             .unwrap()
             .attr("href")
             .unwrap();
-        let mut task = Task::<Targ>::new();
-        task.uri = format!("https://quotes.toscrape.com{}", next_url);
-        task.parser = "parse_quote".to_string();
+        let task = Task::builder()
+            .uri(format!("https://quotes.toscrape.com{}", next_url))
+            .parser(parse_quote)
+            .body(Body::empty(), "quote".into())
+            .unwrap();
         r.task.push(task);
     }
     r

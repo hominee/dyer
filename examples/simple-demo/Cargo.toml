@@ -7,15 +7,17 @@ edition = "2018"
 
 [lib]
 name = "simple_demo"
-path = "src/spider.rs"
+path = "src/actor.rs"
 
 [[bin]]
 name = "simple-demo"
 path = "src/bin/simple_demo.rs"
 
 [dependencies]
-dyer = { version = "2.0" }
+#dyer = { version = "2.0" }
+dyer = { path = "../.." }
 serde = { version = "*", features = ["derive"] }
 tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
 simple_logger = "*"
 select = "*"
+serde_json = "*"

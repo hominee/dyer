@@ -4,15 +4,14 @@ use diesel::pg::PgConnection as Conn_pg;
 use diesel::prelude::*;
 use diesel::sqlite::SqliteConnection as Conn_sqlite;
 use dotenv::dotenv;
-use dyer::dyer_macros::pipeline;
+use dyer::*;
 use std::env;
 use std::sync::Once;
-use std::sync::{Arc, Mutex};
 
 type Conn = (Conn_sqlite, Conn_pg, Conn_mysql);
 
-#[pipeline(open_pipeline)]
-async fn establish_connection<'a>() -> &'a Option<Conn> {
+#[dyer::pipeline]
+pub async fn establish_connection(_app: &mut App<Entities>) -> Option<&'static Conn> {
     static INIT: Once = Once::new();
     static mut VAL: Option<Conn> = None;
 
@@ -35,20 +34,20 @@ async fn establish_connection<'a>() -> &'a Option<Conn> {
                     .expect(&format!("error connectin to {}", database_url_mysql)),
             ));
         });
-        &VAL
+        VAL.as_ref()
     }
 }
 
-#[pipeline(process_entity)]
-pub async fn store_quote(items: &mut Arc<Mutex<Vec<Entities>>>) {
+#[dyer::pipeline]
+pub async fn store_quote(mut items: Vec<Entities>, _app: &mut App<Entities>) {
     use crate::schema::quotes::dsl::*;
 
-    let conn: &Option<Conn> = establish_connection().await;
-    while let Some(Entities::Quote(item)) = items.lock().unwrap().pop() {
+    let conn = establish_connection(_app).await.unwrap();
+    while let Some(Entities::Quote(item)) = items.pop() {
         // sqlite
         diesel::insert_into(quotes)
             .values(&item)
-            .execute(&conn.as_ref().unwrap().0)
+            .execute(&conn.0)
             .map_or_else(
                 |e| println!("Inserting into sqlite database: {:?}", e.to_string()),
                 |_| {},
@@ -56,7 +55,7 @@ pub async fn store_quote(items: &mut Arc<Mutex<Vec<Entities>>>) {
         // postgres
         diesel::insert_into(quotes)
             .values(&item)
-            .get_result::<Quote>(&conn.as_ref().unwrap().1)
+            .get_result::<Quote>(&conn.1)
             .map_or_else(
                 |e| println!("Inserting into Postgresql database: {:?}", e.to_string()),
                 |_| {},
@@ -64,7 +63,7 @@ pub async fn store_quote(items: &mut Arc<Mutex<Vec<Entities>>>) {
         // mysql
         diesel::insert_into(quotes)
             .values(&item)
-            .execute(&conn.as_ref().unwrap().2)
+            .execute(&conn.2)
             .map_or_else(
                 |e| println!("Inserting into Mysql database: {:?}", e.to_string()),
                 |_| {},

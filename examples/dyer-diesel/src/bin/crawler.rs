@@ -11,14 +11,13 @@ use diesel::mysql::MysqlConnection as Conn_mysql;
 use diesel::pg::PgConnection as Conn_pg;
 use diesel::sqlite::SqliteConnection as Conn_sqlite;
 
-use crawler::entity::{Entities, Parg, Targ};
+use crawler::entity::*;
 use crawler::middleware::handle_entities;
 use crawler::pipeline::{establish_connection, store_quote};
-use crawler::MySpider;
+use crawler::MyActor;
 use dyer::*;
-use std::sync::{Arc, Mutex};
 
-type Conn = (Conn_sqlite, Conn_pg, Conn_mysql);
+pub type Conn = (Conn_sqlite, Conn_pg, Conn_mysql);
 
 #[tokio::main]
 async fn main() {
@@ -26,16 +25,14 @@ async fn main() {
         .with_level(log::LevelFilter::Info)
         .init()
         .unwrap();
-    let middleware = plug!(
-        MiddleWare < Entities,
-        Targ,
-        Parg > { handle_entity: handle_entities }
-    );
-    let pipeline = plug!( PipeLine<Entities, Conn> {
-        open_pipeline: establish_connection,
-        process_entity: store_quote
-    } );
-    let spider = MySpider::new();
-    let mut app = dyer::App::<Entities, Targ, Parg>::new();
-    app.run(&spider, &middleware, pipeline).await.unwrap();
+    let middleware = MiddleWare::<Entities>::builder()
+        .entity(&handle_entities)
+        .build("quote".into());
+    let pipeline = PipeLine::<Entities, &'static Conn>::builder()
+        .initializer(&establish_connection)
+        .entity(&store_quote)
+        .build("quote".into());
+    let actor = MyActor::new().await;
+    let mut app = dyer::App::<Entities>::new();
+    app.run(&actor, &middleware, &pipeline).await.unwrap();
 }

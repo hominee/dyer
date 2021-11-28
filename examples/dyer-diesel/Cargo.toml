@@ -8,15 +8,17 @@ edition = "2018"
 
 [lib]
 name = "crawler"
-path = "src/spider.rs"
+path = "src/actor.rs"
 
 [[bin]]
 name = "crawler"
 path = "src/bin/crawler.rs"
 
 [dependencies]
-dyer = { version = "2.0" }
+#dyer = { version = "2.0" }
+dyer = { path = "../.." }
 serde = { version = "1.0", features = ["derive"] }
+serde_json = "*"
 tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
 simple_logger = "1.11" 
 diesel = {version = "1.4.1", features = ["sqlite", "mysql", "postgres", "serde_json",  "numeric"] }

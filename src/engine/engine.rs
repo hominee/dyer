@@ -1,212 +1,165 @@
-extern crate hyper_timeout;
-extern crate log;
-extern crate serde;
-extern crate serde_json;
-extern crate signal_hook;
-extern crate tokio;
+//! the core of `Dyer`, that drives almost the events of data flow, including dispathing parser to
+//! parse `Response`, generating `Affix`,
+//! generating `Task`, preparation before opening actor, affairs before closing actor.  
 
-use crate::component::{Client, Profile, Request, Response, Task};
-use crate::engine::Spider;
-use crate::engine::{arg::ArgProfile, ArgApp};
+use crate::component::{body::Body, couple::Couple, Affix, Client, Poly, Request, Response, Task};
+use crate::engine::Actor;
+use crate::engine::{appfut::AppFut, arg::ArgAffix, vault::Vault, ArgApp};
+use crate::plugin::Affixor;
 use crate::plugin::{MiddleWare, PipeLine};
+use crate::response::MetaResponse;
 use crate::utils;
-use serde::{Deserialize, Serialize};
+use crate::Parsed;
+//use futures::task::SpawnExt;
+//use futures_executor::ThreadPool;
 use signal_hook::flag as signal_flag;
-use std::sync::{
-    atomic::{AtomicUsize, Ordering},
-    Arc, Mutex,
+use std::collections::HashMap;
+use std::error::Error;
+use std::iter::FromIterator;
+use std::{
+    collections::VecDeque,
+    sync::atomic::{AtomicUsize, Ordering},
 };
-use tokio::task;
 
-// H hash of T serve as index for T
-// and linkedlist provodes positional infomation for certain hash H
-pub(crate) struct AppFut {
-    /// hash-value pairs
-    inner_data: std::collections::HashMap<u64, task::JoinHandle<()>>,
-    /// an sorted(ascending) list storing hash and time stamp
-    inner_index: std::collections::LinkedList<(u64, f64)>,
-}
-impl AppFut {
-    /// create an instance
-    pub(crate) fn new() -> Self {
-        Self {
-            inner_data: std::collections::HashMap::new(),
-            inner_index: std::collections::LinkedList::new(),
-        }
-    }
-
-    /// directly take an value out and feed it to a closure
-    /// and update `inner_index`
-    pub(crate) async fn direct_join(&mut self, mut ids: Vec<u64>) {
-        let mut raw_results = Vec::with_capacity(ids.len());
-        ids.iter().for_each(|id| {
-            if let Some(item) = self.inner_data.remove(id) {
-                raw_results.push(item);
-            }
-        });
-        let mut item_cached = Vec::new();
-        while let Some(item) = self.inner_index.pop_front() {
-            if ids.contains(&item.0) {
-                let p = ids.iter().position(|&x| x == item.0).unwrap();
-                ids.remove(p);
-            } else {
-                item_cached.push(item);
-            }
-            if ids.is_empty() || self.inner_index.is_empty() {
-                break;
-            }
-        }
-        item_cached
-            .into_iter()
-            .for_each(|item| self.inner_index.push_back(item));
-        Client::join_all(raw_results).await;
-    }
-
-    /// execute results from `get_idel` and feed it to a callback
-    /// and update `inner_index`
-    pub(crate) async fn await_join(&mut self, gap: f64, capacity: usize) {
-        let idels = self.get_idel(gap, capacity);
-        if !idels.is_empty() {
-            log::info!(
-                "joining {} / {} for Response.",
-                idels.len(),
-                self.inner_index.len() + idels.len(),
-            );
-            let tasks = idels
-                .into_iter()
-                .map(|idel| idel.2)
-                .collect::<Vec<task::JoinHandle<()>>>();
-            Client::join_all(tasks).await;
-        }
-    }
-
-    /// inset an item and update `inner_data` and `inner_index`
-    pub(crate) fn insert(&mut self, item: task::JoinHandle<()>, hash: u64, stamp: f64) {
-        self.inner_data.insert(hash, item);
-        let now = utils::now();
-        self.inner_index.push_back((hash, stamp));
-        assert!(self.inner_index.front().unwrap_or(&(0, 0.0)).1 < now);
-    }
-
-    /// get no more than `capacity`s idels that longer than `gap`
-    fn get_idel(&mut self, gap: f64, capacity: usize) -> Vec<(u64, f64, task::JoinHandle<()>)> {
-        let now = utils::now();
-        let mut items = Vec::with_capacity(capacity);
-        while let Some(item) = self.inner_index.pop_front() {
-            if item.1 + gap <= now && items.len() <= capacity {
-                let ele = (item.0, item.1, self.inner_data.remove(&item.0).unwrap());
-                items.push(ele);
-            } else {
-                self.inner_index.push_front(item);
-                break;
-            }
-        }
-        if !items.is_empty() {
-            log::debug!("availible response length: {}", items.len());
-        }
-        items
-    }
-}
-
-/// An abstraction and collection of data flow of `Dyer`,  
-pub struct App<E, T, P>
-where
-    T: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-    P: Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone,
-{
+/// An abstraction and collection of data flow  
+pub struct App<E> {
     /// a vector of `Task`, store them into directory if too many
     /// in order to lower the memory
-    pub task: Arc<Mutex<Vec<Task<T>>>>,
+    pub task: Vault<VecDeque<Task>>,
     /// cached `Task`to be used  
-    pub task_tmp: Arc<Mutex<Vec<Task<T>>>>,
-    /// a vector of `Profile`
-    pub profile: Arc<Mutex<Vec<Profile<P>>>>,
+    pub task_tmp: Vault<Vec<Task>>,
+    /// a vector of `Affix`
+    pub affix: Vault<VecDeque<Affix>>,
     /// a vector of `Request`
-    pub req: Arc<Mutex<Vec<Request<T, P>>>>,
+    pub req: Vault<VecDeque<Request>>,
     /// cached `Request`to be spawned  
-    pub req_tmp: Arc<Mutex<Vec<Request<T, P>>>>,
+    pub req_tmp: Vault<Vec<Request>>,
     /// a vector of `Response`
-    pub(crate) res: Arc<Mutex<Vec<Response<T, P>>>>,
+    pub res: Vault<Vec<Result<Response, MetaResponse>>>,
     /// collected entities
-    pub(crate) entities: Arc<Mutex<Vec<E>>>,
+    pub entities: Vault<Vec<E>>,
     /// some parse-failed `Response` for manual inspection
-    pub(crate) yield_err: Arc<Mutex<Vec<String>>>,
+    pub errs: Vault<Vec<Result<Response, MetaResponse>>>,
     /// future `Response` with time stamp by which joined forcefully
-    //pub fut_res: Arc<Mutex<Vec<(f64, task::JoinHandle<()>)>>>,
     pub(crate) fut_res: AppFut,
-    /// future `Profile` with time stamp by which joined forcefully
-    //pub fut_profile: Arc<Mutex<Vec<(f64, task::JoinHandle<()>)>>>,
-    pub(crate) fut_profile: AppFut,
+    /// future `Affix` with time stamp by which joined forcefully
+    pub(crate) fut_affix: AppFut,
     /// Some argument to control the data flow
     pub args: ArgApp,
+    /// couples of task and affix,
+    /// serving as a backup when the constructed request executed failed
+    pub couple: Vault<HashMap<u64, Couple>>,
+    /// periodically called to backup `Poly`
+    /// NOTE that if `None` all `Poly` lost at runtime when interupts happens  
+    pub session_storer: Option<Box<dyn for<'a> Fn(Poly, &'a ()) -> &'a str + Send>>,
+    /// called to load `Poly` at resuming session or load `Task` to execute
+    /// NOTE that if `None` App Starts with new session
+    pub session_loader: Option<Box<dyn Fn(&str) -> Poly + Send>>,
+    /// modify the body of [Task], [Affix] in [Couple]
+    /// return the [Request]'s [Body]
+    /// if not set, just simply concat the two of them
+    pub body_modifier: Option<Box<dyn for<'c, 'd> Fn(&'c Body, Option<&'d Body>) -> Body + Send>>,
+    //pool: ThreadPool,
 }
 
-impl<'a, E, T, P> App<E, T, P>
-where
-    T: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
-    P: 'static + Serialize + for<'de> Deserialize<'de> + std::fmt::Debug + Clone + Sync + Send,
-    E: Serialize + std::fmt::Debug + Clone + Send + Sync,
-{
+impl<'a, E> App<E> {
     /// create an instance of `App`
     pub fn new() -> Self {
         App {
-            task: Arc::new(Mutex::new(Vec::new())),
-            task_tmp: Arc::new(Mutex::new(Vec::new())),
-            profile: Arc::new(Mutex::new(Vec::new())),
-            req: Arc::new(Mutex::new(Vec::new())),
-            req_tmp: Arc::new(Mutex::new(Vec::new())),
-            res: Arc::new(Mutex::new(Vec::new())),
-            entities: Arc::new(Mutex::new(Vec::new())),
-            yield_err: Arc::new(Mutex::new(Vec::new())),
+            task: Vault::new(VecDeque::new()),
+            task_tmp: Vault::new(Vec::new()),
+            affix: Vault::new(VecDeque::new()),
+            req: Vault::new(VecDeque::new()),
+            req_tmp: Vault::new(Vec::new()),
+            res: Vault::new(Vec::new()),
+            entities: Vault::new(Vec::new()),
+            errs: Vault::new(Vec::new()),
             fut_res: AppFut::new(),
-            fut_profile: AppFut::new(),
+            fut_affix: AppFut::new(),
+            couple: Vault::new(HashMap::new()),
             args: ArgApp::new(),
+            session_storer: None,
+            session_loader: None,
+            body_modifier: None,
+            //pool: ThreadPool::new().unwrap(),
         }
     }
 
+    /// add an Actor
+    pub fn add_actor<A>(&mut self, spd: &dyn Actor<E, A>)
+    where
+        A: Affixor + Send + 'static,
+    {
+        let _ = spd;
+    }
+
+    /// add an Session Loader
+    pub fn session_loader(&mut self, loader: Box<dyn Fn(&str) -> Poly + Send>) {
+        self.session_loader = Some(loader);
+    }
+
+    /// add an Session Storer
+    pub fn session_storer(&mut self, storer: Box<dyn for<'b> Fn(Poly, &'b ()) -> &'b str + Send>) {
+        self.session_storer = Some(storer);
+    }
+
+    /// modify the body of [Task], [Affix] in [Couple]
+    /// return the [Request]'s [Body]
+    /// if not set, just simply concat the two of them
     /// get the overview of `App`
-    pub fn info(&mut self) {
+    pub fn body_modifier(
+        &mut self,
+        f: Box<dyn for<'c, 'd> Fn(&'c Body, Option<&'d Body>) -> Body + Send>,
+    ) {
+        self.body_modifier = Some(f);
+    }
+
+    fn info(&mut self) {
         let mut vs = Vec::new();
-        vs.push("App overview: ".to_string());
-        let len_task = self.task.lock().unwrap().len();
+        vs.push("Stats Overview:".to_string());
+        let len_task = self.task.as_ref().len();
         if len_task != 0 {
             vs.push(format!("{} Task(s)", len_task));
         }
-        let len_task_tmp = self.task_tmp.lock().unwrap().len();
+        let len_task_tmp = self.task_tmp.as_ref().len();
         if len_task_tmp != 0 {
-            vs.push(format!("{} cached Task(s)", len_task_tmp));
+            vs.push(format!("{} Cached Task(s)", len_task_tmp));
         }
-        let len_profile = self.profile.lock().unwrap().len();
-        if len_profile != 0 {
-            vs.push(format!("{} Profile(s)", len_profile));
+        let len_affix = self.affix.as_ref().len();
+        if len_affix != 0 {
+            vs.push(format!("{} Affix(s)", len_affix));
         }
-        let len_req = self.req.lock().unwrap().len();
+        let len_req = self.req.as_ref().len();
         if len_req != 0 {
             vs.push(format!("{} Request(s)", len_req));
         }
-        let len_req_tmp = self.req_tmp.lock().unwrap().len();
+        let len_req_tmp = self.req_tmp.as_ref().len();
         if len_req_tmp != 0 {
-            vs.push(format!("{} cached Request(s)", len_req_tmp));
+            vs.push(format!("{} Cached Request(s)", len_req_tmp));
         }
-        let len_res = self.res.lock().unwrap().len();
+        let len_res = self.res.as_ref().len();
         if len_res != 0 {
             vs.push(format!("{} Response(s)", len_res));
         }
-        let len_result = self.entities.lock().unwrap().len();
+        let len_result = self.entities.as_ref().len();
         if len_result != 0 {
             vs.push(format!("{} Result(s)", len_result));
         }
-        let len_yield_err = self.yield_err.lock().unwrap().len();
-        if len_yield_err != 0 {
-            vs.push(format!("{} yield Error(s)", len_yield_err));
+        let len_errs = self.errs.as_ref().len();
+        if len_errs != 0 {
+            vs.push(format!("{} Yield Error(s)", len_errs));
         }
-        let len_fut_res = self.fut_res.inner_index.len();
+        let len_couple = self.couple.len();
+        if len_couple != 0 {
+            vs.push(format!("{} Buffered Couple(s)", len_couple));
+        }
+        let len_fut_res = self.fut_res.index.len();
         if len_fut_res != 0 {
-            vs.push(format!("{} future Response(s)", len_fut_res));
+            vs.push(format!("{} Future Response(s)", len_fut_res));
         }
-        let len_fut_profile = self.fut_profile.inner_index.len();
-        if len_fut_profile != 0 {
-            vs.push(format!("{} future Profile(s)", len_fut_profile));
+        let len_fut_affix = self.fut_affix.index.len();
+        if len_fut_affix != 0 {
+            vs.push(format!("{} Future Affix(s)", len_fut_affix));
         }
         if vs.len() == 1 {
             log::info!("{}  {}", vs.join("  "), "empty so far");
@@ -215,190 +168,338 @@ where
         }
     }
 
-    /// to see whether to generate `Profile`
-    pub fn update_profile(&mut self, spd: &'a dyn Spider<E, T, P>) {
-        log::trace!("step into update_profile");
-        if let Some(ArgProfile {
+    /// to see whether to generate `Affix`
+    async fn update_affix<A>(&mut self, spd: &'a dyn Actor<E, A>)
+    where
+        A: Affixor + Send + 'static,
+    {
+        log::trace!("Step into update_affix");
+        if spd.entry_affix().await.is_none() || !self.args.affix_on() {
+            return;
+        }
+        if let Some(ArgAffix {
             is_on: true,
-            profile_min,
-            profile_max,
-        }) = self.args.arg_profile
+            affix_min,
+            affix_max,
+        }) = self.args.arg_affix
         {
-            // profile customization is on
+            // affix customization is on
             let rd1 = (utils::now() * 3000.0) % 1.0;
-            let profile_len = self.profile.lock().unwrap().len()
-                + self.fut_profile.inner_index.len()
-                + self.req.lock().unwrap().len()
-                + self.req_tmp.lock().unwrap().len();
-            let less = profile_len <= profile_min;
-            let exceed = !less && profile_len <= profile_max && rd1 <= 0.333;
-            let fut_exceed = profile_len < profile_max;
+            let affix_len = self.affix.as_ref().len()
+                + self.fut_affix.index.len()
+                + self.req.as_ref().len()
+                + self.req_tmp.as_ref().len();
+            let less = affix_len <= affix_min;
+            let exceed = !less && affix_len <= affix_max && rd1 <= 0.333;
+            let fut_exceed = affix_len < affix_max;
             let mut emer = false;
             let rd2 = (utils::now() * 3000.0) % 1.0;
-            if profile_len < self.task.lock().unwrap().len() && rd2 <= 0.01 {
+            if affix_len < self.task.as_ref().len() && rd2 <= 0.03 {
                 emer = true;
             }
             if (less || exceed) && fut_exceed || emer {
                 let now = utils::now();
-                let profile = self.profile.clone();
-                log::info!("{} requests spawned for Profile", 3);
-                let f = spd.entry_profile();
-                let req = f.req.as_ref().expect(
-                    "Request to generate profile cannot be none when profile customization enabled",
-                );
-                let salt = [
-                    &req.task.uri,
-                    &req.task.method,
-                    &req.task.able.to_string(),
-                    &req.task.trys.to_string(),
-                ];
-                let hash = utils::hash(salt.iter());
-                let joinhandle = task::spawn(async move {
-                    match Profile::exec_one::<E, T>(f).await {
-                        Ok(item) => profile.lock().unwrap().push(item),
-                        Err(e) => log::error!("generate profile failed for: {}", e.desc),
+                log::info!("{} requests spawned for Affix", 3);
+                let mut actor = spd.entry_affix().await.unwrap();
+                if let Some(req) = actor.invoke().await {
+                    // use network-based way to generate affix
+                    let mut affix = self.affix.clone();
+                    let hash = req.metar.info.id;
+                    actor.after_invoke().await;
+                    let handle = tokio::spawn(async move {
+                        //let handle = self .pool .spawn_with_handle(async move {
+                        // generate one `Affix`
+                        // construct a new reqeust
+                        log::trace!("Request that to generate Affix: {:?}", req.inner);
+                        let mut res = Client::exec_one(req).await;
+                        actor.before_parse(Some(&mut res)).await;
+                        if let Some(item) = actor.parse(Some(res)).await {
+                            log::info!("Affix {}  generated", item.metap.info.id);
+                            affix.as_mut().push_back(item);
+                            actor.after_parse().await;
+                        } else {
+                            log::debug!("Affix not generated",);
+                        }
+                    });
+                    self.fut_affix.insert(handle, hash, now);
+                } else {
+                    // non network-way
+                    actor.after_invoke().await;
+                    actor.before_parse(None).await;
+                    if let Some(item) = actor.parse(None).await {
+                        log::info!("Affix {}  generated", item.metap.info.id);
+                        self.affix.as_mut().push_back(item);
+                        actor.after_parse().await;
+                    } else {
+                        log::debug!("Affix not generated",);
                     }
-                });
-                self.fut_profile.insert(joinhandle, hash, now);
+                }
             }
         } else {
-            // profile customization is off
+            // affix customization is off
             // seemingly nothing to do.
         }
     }
 
     /// drive and consume extracted Entity into `PipeLine`
-    pub async fn plineout<C>(&mut self, pipeline: &PipeLine<'a, E, C>)
-    where
-        C: 'a,
-    {
-        log::trace!("step into plineout");
-        if self.yield_err.lock().unwrap().len() > self.args.round_yield_err {
-            log::debug!("pipeline put out yield_parse_err");
-            (pipeline.process_yerr)(&mut self.yield_err).await;
+    async fn plineout<'b, C>(&mut self, pipeline: &PipeLine<'b, E, C>) {
+        log::trace!("Step into plineout");
+        if self.errs.as_ref().len() > self.args.round_errs {
+            log::info!("Pipeline put out yield_parse_err");
+            let mut yerrs = Vec::new();
+            self.errs.update(|es| {
+                while let Some(e) = es.pop() {
+                    yerrs.push(e);
+                }
+            });
+            //std::mem::swap(&mut yerrs, &mut *self.errs);
+            if let Some(ff) = pipeline.yerr() {
+                ff(yerrs, self).await;
+            }
         }
-        if self.entities.lock().unwrap().len() > self.args.round_entity {
+        if self.entities.as_ref().len() >= self.args.round_entity {
             self.info();
-            log::debug!(
-                "pipeline put out {} Results",
-                self.entities.lock().unwrap().len()
-            );
-            (pipeline.process_entity)(&mut self.entities).await;
+            log::info!("Data Pipeline Dumping: {} ", self.entities.as_ref().len());
+            let mut ens = Vec::new();
+            self.entities.update(|es| {
+                while let Some(e) = es.pop() {
+                    ens.push(e);
+                }
+            });
+            if let Some(ff) = pipeline.entity() {
+                ff(ens, self).await;
+            }
         }
     }
 
     /// load and balance `Request`
-    pub async fn update_req(&mut self, middleware: &MiddleWare<'a, E, T, P>) {
-        log::trace!("step into update_req");
+    async fn update_req<'b>(&mut self, middleware: &'b MiddleWare<'b, E>) {
+        log::trace!("Step into update_req");
         let now = utils::now();
-        let len_req_tmp = self.req_tmp.lock().unwrap().len();
+        let len_req_tmp = self.req_tmp.as_ref().len();
         if len_req_tmp <= self.args.round_req_min {
             // cached request is not enough
-            let len_req = self.req.lock().unwrap().len();
+            let len_req = self.req.as_ref().len();
             let mut requests = Vec::new();
 
             //  limit len_req and reqs that is availible by now
             for _ in 0..len_req {
-                let request = self.req.lock().unwrap().remove(0);
-                if request.able <= now {
+                let request = self.req.as_mut().pop_front().unwrap();
+                if request.metar.info.able <= now {
                     requests.push(request);
                 } else {
-                    self.req.lock().unwrap().insert(0, request);
+                    self.req.as_mut().push_front(request);
                     break;
                 }
             }
-            let (buf_task, buf_pfile) = (middleware.handle_req)(&mut requests, self).await;
-            let req_len = requests.len();
-            if req_len != 0 {
-                self.req_tmp.lock().unwrap().extend(requests);
-                log::debug!("take {} request from request to cached request", req_len);
+            if let Some(ff) = middleware.req() {
+                ff(&mut requests, self).await;
             }
-            self.task.lock().unwrap().extend(buf_task);
-            if let Some(ArgProfile { is_on: true, .. }) = self.args.arg_profile {
-                self.profile.lock().unwrap().extend(buf_pfile);
+            let req_len = requests.len();
+            if req_len > 0 {
+                self.req_tmp.as_mut().extend(requests);
+                log::debug!("Take {} request from request to cached request", req_len);
             }
         }
     }
 
     /// construct request
-    pub fn gen_req(&mut self) {
-        log::trace!("step into gen_req");
-        let use_device = if let Some(ArgProfile { is_on: true, .. }) = self.args.arg_profile {
-            true
-        } else {
-            false
-        };
-        let len_task = self.task.lock().unwrap().len();
-        let len_profile = self.profile.lock().unwrap().len();
-        if (use_device && len_task != 0 && len_profile != 0) || (!use_device && len_task != 0) {
-            let round_task = self.args.round_task;
-            let reqs = Request::gen(
-                self.profile.clone(),
-                self.task.clone(),
-                round_task,
-                use_device,
-            );
-            self.req.lock().unwrap().extend(reqs);
+    fn gen_req<'b>(&mut self) {
+        log::trace!("Step into gen_req");
+        let affix_on = self.args.affix_on();
+        let len_task = self.task.as_ref().len();
+        let len_affix = self.affix.as_ref().len();
+        let round_task = self.args.round_task;
+        let len = usize::min(len_task, round_task);
+        let mut reqs = Vec::new();
+        if affix_on && len.min(len_affix) > 0 {
+            let len = len.min(len_affix);
+            log::debug!("Creating {} request", len);
+            for _ in 0..len {
+                let now = utils::now();
+                let affix = self.affix.as_mut().pop_back().unwrap();
+                if affix.metap.info.able > now {
+                    // not available right now
+                    self.affix.as_mut().push_front(affix);
+                    break;
+                }
+                let task = self.task.as_mut().pop_back().unwrap();
+                if task.metat.info.able > now {
+                    // not available right now
+                    self.task.as_mut().push_front(task);
+                    break;
+                }
+                let couple = Couple::new(task, Some(affix));
+                let req = Request::from_couple(&couple, self.body_modifier.as_ref());
+                self.couple.insert(couple.id, couple);
+                log::debug!("Created Request: {:?}", req);
+                reqs.push(req);
+            }
+        } else if !affix_on && len > 0 {
+            log::debug!("Creating {} request", len);
+            for _ in 0..len {
+                let now = utils::now();
+                let task = self.task.as_mut().pop_back().unwrap();
+                if task.metat.info.able > now {
+                    // not available right now
+                    self.task.as_mut().push_front(task);
+                    break;
+                }
+                let couple = Couple::new(task, None);
+                let req = Request::from_couple(&couple, self.body_modifier.as_ref());
+                log::trace!("Created request: {:?}", req);
+                reqs.push(req);
+                self.couple.insert(couple.id, couple);
+            }
         }
+        self.req.as_mut().extend(reqs);
     }
 
     /// spawn polling `Request` as `tokio::task` and executing asynchronously,
-    pub async fn spawn_task(&mut self) {
-        log::trace!("step into spawn_task");
-        if self.fut_res.inner_index.len() > self.args.spawn_task_max {
-            log::warn!("enough Future Response, spawn no task.");
-        } else {
-            log::trace!("take request out to be executed.");
-            let len = self.args.round_req.min(self.req_tmp.lock().unwrap().len());
-            let len_load = self.args.rate.lock().unwrap().get_len(None).min(len);
-            if len_load > 0 {
-                std::iter::repeat(0)
-                    .take(len_load)
-                    .into_iter()
-                    .for_each(|_| {
-                        let now = utils::now();
-                        let req = self.req_tmp.lock().unwrap().pop().unwrap();
-                        let salt = [
-                            &req.task.uri,
-                            &req.task.method,
-                            &req.task.able.to_string(),
-                            &req.task.trys.to_string(),
-                        ];
-                        let hash = utils::hash(salt.iter());
-                        let app_arg = self.args.rate.clone();
-                        let app_res = self.res.clone();
-                        let joinhandle = task::spawn(async move {
-                            log::info!("spawned requests: {} ", &req.task.uri);
-                            let (res, gap) = Client::exec_one(req).await;
-                            app_res.lock().unwrap().push(res);
-                            app_arg.lock().unwrap().stamps.push(gap);
-                        });
-                        self.fut_res.insert(joinhandle, hash, now);
-                    });
+    async fn spawn_task(&mut self) {
+        log::trace!("Step into spawn_task");
+        if self.fut_res.index.len() > self.args.spawn_task_max {
+            log::warn!("Enough Future Response, spawn no task.");
+            return;
+        }
+        log::trace!("Take request out to be executed.");
+        let len = self.args.round_req.min(self.req_tmp.as_ref().len());
+        let len_load = self.args.rate.as_mut().get_len(None).min(len);
+        for _ in 0..len_load {
+            let now = utils::now();
+            let req = self.req_tmp.as_mut().pop().unwrap();
+            let hash = req.metar.info.id;
+            let mut app_arg = self.args.rate.clone();
+            let mut app_res = self.res.clone();
+            //let mut couple = self.couple.clone();
+            let handle = tokio::spawn(async move {
+                //let handle = self .pool .spawn_with_handle(async move {
+                log::info!("Crawling requests: {} ", &req.inner.uri);
+                match Client::exec_one(req).await {
+                    Ok(res) => {
+                        app_arg.as_mut().stamps.push(res.metas.info.gap);
+                        app_res.as_mut().push(Ok(res));
+                    }
+                    Err(mta) => {
+                        log::error!("request Failed: {:?}", mta.info.from);
+                        app_res.as_mut().push(Err(mta));
+                    }
+                }
+            });
+            self.fut_res.insert(handle, hash, now);
+        }
+    }
+
+    /// specifically, dispose a `Response`, handle failed or corrupt `Response`, and return `Parsed` or `ParseError`.
+    pub async fn parse<'b>(&self, res: Response) -> (Parsed<E>, u64) {
+        log::info!("Successful crawled: {}", &res.metas.info.from.to_string());
+        let hash = res.metas.info.id;
+        let ptr = res.metas.parser.clone();
+        let parser = unsafe { std::mem::transmute::<*const (), fn(Response) -> Parsed<E>>(ptr) };
+        ((parser)(res), hash)
+    }
+
+    /// parse multiple `Response` in `App`, then drive all `Parsed` into `MiddleWare`
+    pub async fn parse_all<'b>(&mut self, mware: &'b MiddleWare<'b, E>) {
+        let round = self.args.round_res;
+        let mut v = Vec::new();
+        let mut tsks = Vec::new();
+        let mut pfiles = Vec::new();
+        let mut reqs = Vec::new();
+        let mut yerr = Vec::new();
+        let mut ens = Vec::new();
+        let mut errs = Vec::new();
+        let mut hashes = Vec::new();
+
+        let len = self.res.as_ref().len().min(round);
+        for _ in 0..len {
+            match self.res.as_mut().pop().unwrap() {
+                Ok(item) => {
+                    let status = item.status().as_u16();
+                    let id = item.metas.info.id;
+                    if status >= 200 && status < 300 {
+                        self.couple.remove(&id);
+                        v.push(item);
+                        continue;
+                    }
+                    errs.push(Ok(item));
+                }
+                Err(meta) => {
+                    errs.push(Err(meta));
+                }
             }
+        }
+        if !errs.is_empty() {
+            if let Some(ff) = mware.err() {
+                ff(&mut errs, self).await;
+            }
+        }
+        if !v.is_empty() {
+            if let Some(ff) = mware.res() {
+                ff(&mut v, self).await;
+            }
+        }
+        while let Some(res) = v.pop() {
+            let (prs, hash) = self.parse(res).await;
+            hashes.push(hash);
+            tsks.extend(prs.task);
+            pfiles.extend(prs.affix);
+            reqs.extend(prs.req);
+            yerr.extend(prs.errs);
+            ens.extend(prs.entities);
+        }
+        if !hashes.is_empty() {
+            self.fut_res.direct_join(hashes).await;
+        }
+        if !reqs.is_empty() {
+            if let Some(ff) = mware.req() {
+                ff(&mut reqs, self).await;
+            }
+            self.req.as_mut().extend(reqs);
+        }
+        if !pfiles.is_empty() {
+            if let Some(ff) = mware.affix() {
+                ff(&mut pfiles, self).await;
+            }
+            self.affix.as_mut().extend(pfiles);
+        }
+        if !tsks.is_empty() {
+            if let Some(ff) = mware.task() {
+                ff(&mut tsks, self).await;
+            }
+            self.task_tmp.as_mut().extend(tsks);
+        }
+        if !ens.is_empty() {
+            if let Some(ff) = mware.entity() {
+                ff(&mut ens, self).await;
+            }
+            self.entities.as_mut().extend(ens);
+        }
+        if !yerr.is_empty() {
+            self.errs.as_mut().extend(yerr);
         }
     }
 
     ///join spawned task, once it exceed the timing `join_gap`, then forcefully join it
-    pub async fn watch(&mut self) {
-        log::trace!("step into watch");
+    async fn watch(&mut self) {
+        log::trace!("Step into watch");
         let threshold_tokio_task = self.args.join_gap;
         let capacity = self.args.round_req;
-        if !self.fut_res.inner_index.is_empty() {
+        if !self.fut_res.index.is_empty() {
             self.fut_res
                 .await_join(threshold_tokio_task, capacity)
                 .await;
         }
-        if !self.fut_profile.inner_index.is_empty() {
-            self.fut_profile
+        if !self.fut_affix.index.is_empty() {
+            self.fut_affix
                 .await_join(threshold_tokio_task, capacity)
                 .await;
         }
     }
 
     /// load cached `Task` from caced directory
-    pub fn buf_task(&self) -> Vec<usize> {
-        log::trace!("step into buf_task");
+    fn buf_task(&self) -> Vec<usize> {
+        log::trace!("Step into buf_task");
         let path = format!("{}/tasks/", self.args.data_dir);
         let mut file_indexs: Vec<usize> = Vec::new();
         if let Ok(items) = std::fs::read_dir(path) {
@@ -417,114 +518,154 @@ where
     }
 
     /// update task in App
-    pub fn update_task(&mut self) {
-        log::trace!("step into update_task");
+    fn update_task(&mut self) {
+        log::trace!("Step into update_task");
         let path = format!("{}/tasks/", self.args.data_dir);
-        if self.task.lock().unwrap().is_empty() {
+        if self.task.as_ref().is_empty() {
             let file_indexs: Vec<usize> = self.buf_task();
             if !file_indexs.is_empty() {
                 let file = format!("{}{}", path, file_indexs[0]);
-                log::warn!("remove used task in {}", file);
+                log::warn!("Remove used task in {}", file);
                 std::fs::remove_file(&file).unwrap();
             }
             if file_indexs.len() <= 1 {
                 let mut task_tmp = Vec::new();
-                let mut tmp = self.task_tmp.lock().unwrap();
+                let mut tmp = self.task_tmp.as_mut();
                 for _ in 0..tmp.len() {
                     let tsk = tmp.pop().unwrap();
                     task_tmp.push(tsk);
                 }
                 if !task_tmp.is_empty() {
                     log::debug!(
-                        "no task buffer file found. load {} tasks from task_tmp",
+                        "No task buffer file found. Load {} tasks from task_tmp",
                         task_tmp.len()
                     );
                 }
-                self.task.lock().unwrap().extend(task_tmp);
+                self.task.as_mut().extend(task_tmp);
             } else if file_indexs.len() >= 2 {
                 let file_new = format!("{}tasks/{}", self.args.data_dir, file_indexs[1]);
-                let tsks = Task::load(&file_new);
-                log::info!("load {} new task in {}", tsks.len(), file_new);
-                self.task.lock().unwrap().extend(tsks);
+                let tsks = utils::load(&file_new, self.session_loader.as_ref());
+                log::info!("Load {} new task in {}", tsks.len(), file_new);
+                self.task.as_mut().extend(tsks);
             }
         }
-        if self.task_tmp.lock().unwrap().len() >= self.args.buf_task {
-            log::debug!("pipeline out buffered task.");
+        if self.task_tmp.as_ref().len() >= self.args.buf_task {
+            log::debug!(
+                "Buffered Task Pipeline Dumping: {}",
+                self.task_tmp.as_ref().len()
+            );
             let files = self.buf_task();
             let file_name = format!(
                 "{}tasks/{}",
                 self.args.data_dir,
                 1 + files.last().unwrap_or(&0)
             );
-            Task::stored(&file_name, &mut self.task_tmp);
-            self.task_tmp.lock().unwrap().clear();
+            utils::stored(&file_name, &mut self.task_tmp, self.session_storer.as_ref());
+            self.task_tmp.as_mut().clear();
         }
     }
 
+    /// check all necessary exit conditions
+    fn exit(&self) -> bool {
+        self.req.as_ref().is_empty()
+            && self.req_tmp.as_ref().is_empty()
+            && self.task.as_ref().is_empty()
+            && self.task_tmp.as_ref().is_empty()
+            && self.fut_res.index.is_empty()
+            && self.res.as_ref().is_empty()
+    }
+
     /// preparation before closing `Dyer`
-    pub async fn close<'b, C>(
+    async fn close<'b, C, A>(
         &'a mut self,
-        spd: &'a dyn Spider<E, T, P>,
-        middleware: &'a MiddleWare<'b, E, T, P>,
+        spd: &'a dyn Actor<E, A>,
+        middleware: &'a MiddleWare<'b, E>,
         pipeline: &'a PipeLine<'b, E, C>,
     ) where
-        C: 'b,
+        A: Affixor + Send + 'static,
     {
-        log::trace!("step into close");
+        log::trace!("Step into close");
         self.info();
-        Response::parse_all(self, usize::MAX, spd, middleware).await;
-        log::info!("sending all of them into Pipeline");
-        (pipeline.process_yerr)(&mut self.yield_err).await;
-        (pipeline.process_entity)(&mut self.entities).await;
-        (pipeline.close_pipeline)().await;
-        log::info!("All work is Done.");
+        if let Some(mut actor) = spd.entry_affix().await {
+            actor.close().await;
+        }
+        self.parse_all(middleware).await;
+        log::info!("Pipeline Data Dumping");
+        let mut yerrs = Vec::new();
+        self.errs.update(|es| {
+            while let Some(e) = es.pop() {
+                yerrs.push(e);
+            }
+        });
+        if let Some(ff) = pipeline.yerr() {
+            ff(yerrs, self).await;
+        }
+        let mut ens = Vec::new();
+        self.entities.update(|es| {
+            while let Some(e) = es.pop() {
+                ens.push(e);
+            }
+        });
+        if let Some(ff) = pipeline.entity() {
+            ff(ens, self).await;
+        }
+        if let Some(ff) = pipeline.disposer() {
+            ff(self).await;
+        }
+        log::info!("Clean the App");
     }
 
     /// drive `Dyer` into running.
-    pub async fn run<'b, C>(
+    pub async fn run<'b, C, A>(
         &'a mut self,
-        spd: &'a dyn Spider<E, T, P>,
-        middleware: &'a MiddleWare<'b, E, T, P>,
-        pipeline: PipeLine<'b, E, C>,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>>
+        spd: &'a dyn Actor<E, A>,
+        middleware: &'a MiddleWare<'b, E>,
+        pipeline: &'a PipeLine<'b, E, C>,
+    ) -> Result<(), Box<dyn Error>>
     where
-        C: 'a,
+        A: Affixor + Send + 'static,
     {
         // signal handling initial
-        let term = Arc::new(AtomicUsize::new(0));
+        let term = std::sync::Arc::new(AtomicUsize::new(0));
         const SIGINT: usize = signal_hook::SIGINT as usize;
-        signal_flag::register_usize(signal_hook::SIGINT, Arc::clone(&term), SIGINT).unwrap();
+        signal_flag::register_usize(signal_hook::SIGINT, term.clone(), SIGINT).unwrap();
 
-        // user defined preparation when open spider
-        spd.open_spider(self);
+        // user defined preparation when open actor
+        spd.open_actor(self).await;
+        if let Some(mut actor) = spd.entry_affix().await {
+            actor.init().await;
+        }
 
-        //skip the history and start new fields to staart with, some Profile required
-        if self.args.is_skip {
-            log::warn!("skipped the history.");
-            if let Some(ArgProfile { is_on: true, .. }) = self.args.arg_profile {
-                Profile::exec_all::<E, T>(self.profile.clone(), 3usize, spd.entry_profile()).await;
-            }
-            let tasks = spd.entry_task().unwrap();
-            self.task.lock().unwrap().extend(tasks);
-            log::info!("new session started");
+        //skip the history and start new fields to staart with, some Affix required
+        if self.args.skip {
+            log::info!("New Session Started");
+            let tasks = spd.entry_task().await.unwrap();
+            self.task.as_mut().extend(tasks);
             self.info();
         } else {
-            log::warn!("use the history file.");
+            log::info!("Resuming The Session");
             let path = format!("{}request", self.args.data_dir);
-            let reqs: Vec<Request<T, P>> = Request::load(&path);
+            let reqs: Vec<Request> = utils::load(&path, self.session_loader.as_ref());
             let path = format!("{}request_tmp", self.args.data_dir);
-            let req_tmp: Vec<Request<T, P>> = Request::load(&path);
-            let path = format!("{}profile", self.args.data_dir);
-            let profile: Vec<Profile<P>> = Profile::load(&path);
+            let req_tmp: Vec<Request> = utils::load(&path, self.session_loader.as_ref());
+            let path = format!("{}affix", self.args.data_dir);
+            let affix: Vec<Affix> = utils::load(&path, self.session_loader.as_ref());
+            let path = format!("{}couple", self.args.data_dir);
+            let couples: Vec<(u64, Couple)> = utils::load(&path, self.session_loader.as_ref());
             let files = self.buf_task();
             let file = format!("{}/{}", self.args.data_dir, files[0]);
-            let task: Vec<Task<T>> = Task::load(&file);
+            let task: Vec<Task> = utils::load(&file, self.session_loader.as_ref());
             log::info!("{} loaded {} Task.", file, task.len());
-            self.task = Arc::new(Mutex::new(task));
-            self.req = Arc::new(Mutex::new(reqs));
-            self.req_tmp = Arc::new(Mutex::new(req_tmp));
-            self.profile = Arc::new(Mutex::new(profile));
-            log::info!("the history files are loaded");
+            self.task
+                .append(&mut task.into_iter().collect::<VecDeque<_>>());
+            self.req
+                .append(&mut reqs.into_iter().collect::<VecDeque<_>>());
+            self.couple
+                .replace(HashMap::<u64, Couple>::from_iter(couples));
+            *self.req_tmp = req_tmp;
+            self.affix
+                .append(&mut affix.into_iter().collect::<VecDeque<_>>());
+            log::info!("History Files Loaded");
             self.info();
         }
 
@@ -532,56 +673,44 @@ where
             match term.load(Ordering::Relaxed) {
                 SIGINT => {
                     // receive the Ctrl+c signal
-                    // by default  request  task profile and result yield err are going to stroed into
-                    // file
-                    log::info!("receive Ctrl+c signal, preparing ...");
+                    // by default request task affix
+                    // and result yield err are going to stroed into file
+                    log::info!("Receive Ctrl+c Signal, Preparing Exit ...");
 
                     //finish remaining futures
+                    log::info!("Joining All Futures");
                     let capacity = self.args.round_req;
-                    while !self.fut_res.inner_data.is_empty() {
+                    while !self.fut_res.data.is_empty() {
                         self.fut_res.await_join(0.0, capacity).await;
                     }
-                    log::info!("join all future response");
 
                     // dispath them
+                    log::info!("Closing Actor ...");
                     self.close(spd, middleware, &pipeline).await;
-                    log::info!("executing close_spider...");
-                    spd.close_spider(self);
+                    spd.close_actor(self).await;
+                    log::info!("All Work Is Done, Exiting ...");
                     break;
                 }
 
                 0 => {
                     // if all task request and other things are done the quit
-                    if self.req.lock().unwrap().is_empty()
-                        && self.req_tmp.lock().unwrap().is_empty()
-                        && self.task.lock().unwrap().is_empty()
-                        && self.task_tmp.lock().unwrap().is_empty()
-                        && self.fut_res.inner_index.is_empty()
-                        //&& self.fut_profile.lock().unwrap().is_empty()
-                        && self.res.lock().unwrap().is_empty()
-                    {
-                        log::info!("all work is done.");
+                    if self.exit() {
+                        log::info!("Closing Actor ...");
                         self.close(spd, middleware, &pipeline).await;
-                        log::info!("executing close_spider...");
-                        spd.close_spider(self);
+                        spd.close_actor(self).await;
+                        log::info!("All Work Is Done, Exiting ...");
                         break;
                     }
 
+                    // before we update request check affix first
+                    self.update_affix(spd).await;
+
                     // consume valid request in cbase_reqs_tmp
                     // if not enough take them from self.req
-                    // TODO middleware return profile
                     self.update_req(middleware).await;
 
                     //take req out to finish
                     self.spawn_task().await;
-
-                    // before we construct request check profile first
-                    self.update_profile(spd);
-
-                    // parse response
-                    //extract the parseResult
-                    let round_res = self.args.round_res;
-                    Response::parse_all(self, round_res, spd, middleware).await;
 
                     //pipeline put out yield_parse_err and Entity
                     self.plineout(&pipeline).await;
@@ -595,8 +724,10 @@ where
                     //join the older jobs
                     self.watch().await;
 
+                    self.parse_all(middleware).await;
+
                     // update Rate
-                    let updated = self.args.rate.lock().unwrap().update();
+                    let updated = self.args.rate.as_mut().update();
 
                     // update config file in each interval
                     if updated {
@@ -605,27 +736,27 @@ where
                     }
 
                     // to backup history file or not
-                    if self.args.rate.lock().unwrap().backup() {
-                        self.close(spd, middleware, &pipeline).await;
-
-                        log::info!("backup history...");
-                        let path = format!("{}profile", self.args.data_dir);
-                        Profile::stored(&path, &mut self.profile);
+                    if self.args.rate.as_mut().backup() && self.session_storer.is_some() {
+                        self.close(spd, middleware, pipeline).await;
+                        log::info!("Backup History...");
+                        let path = format!("{}affix", self.args.data_dir);
+                        utils::stored(&path, &mut self.affix, self.session_storer.as_ref());
                         let path = format!("{}task", self.args.data_dir);
-                        Task::stored(&path, &mut self.task);
+                        utils::stored(&path, &mut self.task, None);
                         let path = format!("{}task_tmp", self.args.data_dir);
-                        Task::stored(&path, &mut self.task_tmp);
+                        utils::stored(&path, &mut self.task_tmp, self.session_storer.as_ref());
                         let path = format!("{}request", self.args.data_dir);
-                        Request::stored(&path, &mut self.req);
+                        utils::stored(&path, &mut self.req, self.session_storer.as_ref());
                         let path = format!("{}request_tmp", self.args.data_dir);
-                        Request::stored(&path, &mut self.req_tmp);
+                        utils::stored(&path, &mut self.req_tmp, self.session_storer.as_ref());
+                        let path = format!("{}couple", self.args.data_dir);
+                        utils::stored(&path, &mut self.couple, self.session_storer.as_ref());
                     }
                 }
 
                 _ => unreachable!(),
             }
         }
-
         Ok(())
     }
 }

@@ -1,18 +1,9 @@
-//#![allow(unused_imports)]
-
-extern crate dyer;
-extern crate select;
-extern crate serde;
-extern crate simple_demo;
-extern crate simple_logger;
-extern crate tokio;
-
+use dyer::plugin::pipeline::PipeLine;
 use dyer::*;
-use simple_demo::entity::{Entities, Parg, Targ};
-use simple_demo::middleware::{handle_profile, handle_req, handle_task};
-use simple_demo::pipeline::{open_file, store_item};
-use simple_demo::MySpider;
-use std::sync::{Arc, Mutex};
+use simple_demo::entity::Entities;
+use simple_demo::middleware::{handle_affix, handle_req, handle_task};
+use simple_demo::pipeline::*;
+use simple_demo::MyActor;
 
 #[tokio::main]
 async fn main() {
@@ -20,16 +11,17 @@ async fn main() {
         .with_level(log::LevelFilter::Info)
         .init()
         .unwrap();
-    let middleware = plug!( MiddleWare<Entities, Targ, Parg> {
-        handle_task: handle_task,
-        handle_req: handle_req,
-        handle_profile: handle_profile
-    });
-    let pipeline = plug!( PipeLine<Entities, std::fs::File> {
-        open_pipeline: open_file,
-        process_entity: store_item
-    } );
-    let spider = MySpider::new();
-    let mut app = dyer::App::<Entities, Targ, Parg>::new();
-    app.run(&spider, &middleware, pipeline).await.unwrap();
+    let middleware = dyer::MiddleWare::builder()
+        .task(&handle_task)
+        .req(&handle_req)
+        .affix(&handle_affix)
+        .build("quote".into());
+    let pipeline = PipeLine::<Entities, _>::builder()
+        //.initializer(&open_file)  // the normal way
+        .initializer(&opener::<Entities>) // also you can specify generic type here
+        .entity(&store_item)
+        .build("quote".into());
+    let actor = MyActor::new().await;
+    let mut app = dyer::App::<Entities>::new();
+    app.run(&actor, &middleware, &pipeline).await.unwrap();
 }
