@@ -18,8 +18,13 @@
 //! # Quick Start
 //!
 //! [**dyer-cli**] is a handy tool for your easy and fast use of dyer, and recommanded to intergrate
-//! with other dependencies. with `rust` and `cargo` installed, the following code helps you get
-//! the tool:
+//! ### Prerequisite
+//!  - `rust` and `cargo` must be installed,
+//!  - OpenSSL library is required to compile openssl-sys(if not installed, see [here])
+//!
+//! [here]: https://github.com/HomelyGuy/dyer/tree/master/examples/
+//!
+//!  the following code helps you get the tool:
 //! ```bash
 //! cargo install dyer-cli
 //! ```
