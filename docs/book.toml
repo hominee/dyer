@@ -1,0 +1,6 @@
+[book]
+authors = ["bla"]
+language = "en"
+multilingual = false
+src = "src"
+title = "CookBook of dyer"
