@@ -32,7 +32,7 @@ async fn main() {
         .initializer(&establish_connection)
         .entity(&store_quote)
         .build("quote".into());
-    let actor = MyActor::new().await;
+    let mut actor = MyActor::new().await;
     let mut app = dyer::App::<Entities>::new();
-    app.run(&actor, &middleware, &pipeline).await.unwrap();
+    app.run(&mut actor, &middleware, &pipeline).await.unwrap();
 }

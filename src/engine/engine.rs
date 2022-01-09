@@ -169,7 +169,7 @@ impl<'a, E> App<E> {
     }
 
     /// to see whether to generate `Affix`
-    async fn update_affix<A>(&mut self, spd: &'a dyn Actor<E, A>)
+    async fn update_affix<A>(&mut self, spd: &'a mut dyn Actor<E, A>)
     where
         A: Affixor + Send + 'static,
     {
@@ -578,7 +578,7 @@ impl<'a, E> App<E> {
     /// preparation before closing `Dyer`
     async fn close<'b, C, A>(
         &'a mut self,
-        spd: &'a dyn Actor<E, A>,
+        spd: &'a mut dyn Actor<E, A>,
         middleware: &'a MiddleWare<'b, E>,
         pipeline: &'a PipeLine<'b, E, C>,
     ) where
@@ -618,7 +618,7 @@ impl<'a, E> App<E> {
     /// drive `Dyer` into running.
     pub async fn run<'b, C, A>(
         &'a mut self,
-        spd: &'a dyn Actor<E, A>,
+        spd: &'a mut dyn Actor<E, A>,
         middleware: &'a MiddleWare<'b, E>,
         pipeline: &'a PipeLine<'b, E, C>,
     ) -> Result<(), Box<dyn Error>>

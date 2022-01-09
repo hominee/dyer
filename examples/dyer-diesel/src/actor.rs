@@ -29,9 +29,9 @@ impl Actor<Entities, Aff> for MyActor {
         }
     }
 
-    async fn open_actor(&self, _app: &mut App<Entities>) {}
+    async fn open_actor(&mut self, _app: &mut App<Entities>) {}
 
-    async fn entry_task(&self) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
+    async fn entry_task(&mut self) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
         let task = Task::get(&self.start_url)
             .parser(parse_quote)
             .body(Body::empty(), "quote".into())
@@ -39,11 +39,11 @@ impl Actor<Entities, Aff> for MyActor {
         Ok(vec![task])
     }
 
-    async fn entry_affix(&self) -> Option<Aff> {
+    async fn entry_affix(&mut self) -> Option<Aff> {
         None
     }
 
-    async fn close_actor(&self, _app: &mut App<Entities>) {
+    async fn close_actor(&mut self, _app: &mut App<Entities>) {
         use crate::entity::Quote;
         use crate::schema::quotes::dsl::*;
         use diesel::prelude::*;

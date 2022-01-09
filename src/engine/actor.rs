@@ -24,14 +24,14 @@ where
 
     /// implementation [Affixor] happens here
     /// when None is returned actor will disable affix customization
-    async fn entry_affix(&self) -> Option<A>;
+    async fn entry_affix(&mut self) -> Option<A>;
 
     /// method to generate [Task] when open [Actor]
-    async fn entry_task(&self) -> Result<Vec<Task>, Box<dyn Error>>;
+    async fn entry_task(&mut self) -> Result<Vec<Task>, Box<dyn Error>>;
 
     /// preparation before enter [Actor]
-    async fn open_actor(&self, app: &mut App<E>);
+    async fn open_actor(&mut self, app: &mut App<E>);
 
     /// preparation before close [Actor]
-    async fn close_actor(&self, app: &mut App<E>);
+    async fn close_actor(&mut self, app: &mut App<E>);
 }
