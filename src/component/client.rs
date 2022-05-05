@@ -101,7 +101,7 @@ impl Client {
                 }
             }
             Err(e) => {
-                log::error!("Failed request ",);
+                log::error!("Failed request: {:?}", e);
                 Err(e.into())
             }
         }
