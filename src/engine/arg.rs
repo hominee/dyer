@@ -410,7 +410,7 @@ impl ArgApp {
     /// parse the dyer.cfg file and update the [ArgApp]
     /// not fail safe for the first time call in [ArgApp::new]
     /// fail safe after that
-    pub fn parse_config(&mut self, path: Option<&str>, fail_safe: bool) {
+    pub fn parse_config(&mut self, _path: Option<&str>, fail_safe: bool) {
         let fields = [
             "arg_affix.is_on",
             "arg_affix.affix_min",
@@ -435,7 +435,7 @@ impl ArgApp {
             "round_errs",
             "round_entity",
         ];
-        let file = std::fs::File::open(path.unwrap_or("dyer.cfg")).unwrap();
+        let file = std::fs::File::open("dyer.cfg").unwrap();
         let reader = BufReader::new(file);
         reader.lines().filter(|line| line.is_ok()).for_each(|line| {
             let pairs = line
@@ -553,6 +553,7 @@ impl ArgRate {
                 self.stamps.clear();
                 self.remains = self.load as usize;
             }
+            log::debug!("arg rate updated: {:?}", self);
             return true;
         }
         false

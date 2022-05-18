@@ -106,6 +106,6 @@ where
 /// basically re-construct a slice from ptr
 ///
 /// generally speaking, it is used to manipulate the lifetime
-pub fn slice<'a, T>(ptr: *const T, len: usize) -> &'a [T] {
+pub fn slice<'a, T: 'a>(ptr: *const T, len: usize) -> &'a [T] {
     unsafe { std::slice::from_raw_parts(ptr, len) }
 }

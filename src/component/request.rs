@@ -508,36 +508,74 @@ impl Request {
                     Some(ff) => ff(&couple.task.body, item),
                     None => Body::get_merged(&couple.task.body, item),
                 };
+                let mut ext_t = Extensions::new();
+                unsafe {
+                    std::ptr::copy(
+                        &couple.task.inner.extensions as *const _,
+                        &mut ext_t as *mut _,
+                        1,
+                    )
+                };
+                let ext_p = if couple.affix.is_none() {
+                    Extensions::new()
+                } else {
+                    let mut ext_p = Extensions::new();
+                    unsafe {
+                        std::ptr::copy(
+                            &couple.affix.as_ref().unwrap().metap.exts as *const _,
+                            &mut ext_p as *mut _,
+                            1,
+                        )
+                    };
+                    ext_p
+                };
                 let inner = InnerRequest {
                     uri: couple.task.inner.uri.clone(),
                     method: couple.task.inner.method.clone(),
                     version: couple.task.inner.version.clone(),
                     headers: couple.task.inner.headers.clone(),
-                    extensions: unsafe {
-                        Exts(
-                            std::ptr::read(&couple.task.inner.extensions),
-                            std::ptr::read(&affix.inner.extensions),
-                            Extensions::new(),
-                            Extensions::new(),
-                        )
-                    },
+                    extensions: Exts(
+                        //std::ptr::read(&couple.task.inner.extensions),
+                        //std::ptr::read(&affix.inner.extensions),
+                        ext_t,
+                        ext_p,
+                        Extensions::new(),
+                        Extensions::new(),
+                    ),
                 };
                 let mut info = couple.task.metat.info.clone();
                 info.able = f64::max(info.able, affix.metap.info.able);
                 info.id = couple.id;
+                let mut ext_t = Extensions::new();
+                unsafe {
+                    std::ptr::copy(&couple.task.metat.exts as *const _, &mut ext_t as *mut _, 1)
+                };
+                let ext_p = if couple.affix.is_none() {
+                    Extensions::new()
+                } else {
+                    let mut ext_p = Extensions::new();
+                    unsafe {
+                        std::ptr::copy(
+                            &couple.affix.as_ref().unwrap().metap.exts as *const _,
+                            &mut ext_p as *mut _,
+                            1,
+                        )
+                    };
+                    ext_p
+                };
                 let metar = MetaRequest {
                     info: info,
                     parser: couple.task.metat.parser.clone(),
                     err_parser: couple.task.metat.err_parser.clone(),
                     body_fn: None,
-                    exts: unsafe {
-                        Exts(
-                            std::ptr::read(&couple.task.metat.exts),
-                            std::ptr::read(&affix.metap.exts),
-                            Extensions::new(),
-                            Extensions::new(),
-                        )
-                    },
+                    exts: Exts(
+                        //std::ptr::read(&couple.task.metat.exts),
+                        //std::ptr::read(&affix.metap.exts),
+                        ext_t,
+                        ext_p,
+                        Extensions::new(),
+                        Extensions::new(),
+                    ),
                 };
                 Self { inner, body, metar }
             }
@@ -549,31 +587,33 @@ impl Request {
                     // - task body + affix body
                     None => Body::get_merged(&couple.task.body, None),
                 };
+                let mut ext = Extensions::new();
+                unsafe {
+                    std::ptr::copy(
+                        &couple.task.inner.extensions as *const _,
+                        &mut ext as *mut _,
+                        1,
+                    )
+                };
                 let inner = InnerRequest {
                     uri: couple.task.inner.uri.clone(),
                     method: couple.task.inner.method.clone(),
                     version: couple.task.inner.version,
                     headers: couple.task.inner.headers.clone(),
-                    extensions: Exts(
-                        unsafe { std::ptr::read(&couple.task.inner.extensions) },
-                        Extensions::new(),
-                        Extensions::new(),
-                        Extensions::new(),
-                    ),
+                    extensions: Exts(ext, Extensions::new(), Extensions::new(), Extensions::new()),
                 };
                 let mut info = couple.task.metat.info.clone();
                 info.id = couple.id;
+                let mut ext = Extensions::new();
+                unsafe {
+                    std::ptr::copy(&couple.task.metat.exts as *const _, &mut ext as *mut _, 1)
+                };
                 let metar = MetaRequest {
                     info: info,
                     parser: couple.task.metat.parser,
                     err_parser: couple.task.metat.err_parser,
                     body_fn: None,
-                    exts: Exts(
-                        unsafe { std::ptr::read(&couple.task.metat.exts) },
-                        Extensions::new(),
-                        Extensions::new(),
-                        Extensions::new(),
-                    ),
+                    exts: Exts(ext, Extensions::new(), Extensions::new(), Extensions::new()),
                 };
                 Self { inner, body, metar }
             }

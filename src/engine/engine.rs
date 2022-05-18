@@ -359,10 +359,15 @@ impl<'a, E> App<E> {
     async fn spawn_task(&mut self) {
         log::trace!("Step into spawn_task");
         if self.fut_res.index.len() > self.args.spawn_task_max {
-            log::warn!("Enough Future Response, spawn no task.");
+            if self.args.rate.as_mut().update() {
+                log::warn!("Enough Future Response, spawn no task.");
+            }
             return;
         }
         log::trace!("Take request out to be executed.");
+        self.req_tmp
+            .as_mut()
+            .sort_by(|a, b| a.info().rank.cmp(&b.info().rank));
         let len = self.args.round_req.min(self.req_tmp.as_ref().len());
         let len_load = self.args.rate.as_mut().get_len(None).min(len);
         for _ in 0..len_load {
@@ -441,6 +446,7 @@ impl<'a, E> App<E> {
         }
         while let Some(res) = v.pop() {
             let (prs, hash) = self.parse(res).await;
+            log::trace!("response parsed: {}", hash);
             hashes.push(hash);
             tsks.extend(prs.task);
             pfiles.extend(prs.affix);
