@@ -124,6 +124,8 @@ pub use component::{
 #[doc(inline)]
 pub use engine::{Actor, App, ArgAffix, ArgApp, ArgRate};
 #[doc(inline)]
+pub use http::Extensions;
+#[doc(inline)]
 pub use plugin::deser::FNMAP;
 #[doc(inline)]
 pub use plugin::{Affixor, MiddleWare, MiddleWareBuilder, PipeLine, PipeLineBuilder};

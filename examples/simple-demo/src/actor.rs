@@ -29,6 +29,7 @@ impl Actor<Entities, Aff> for MyActor {
         // all infomation needed is uri and parser
         let task = Task::get("https://quotes.toscrape.com")
             .parser(parse_quote)
+            .extensions(3i32)
             .body(Body::empty(), "quote".into())
             .unwrap();
         println!("haha {:?}", task);

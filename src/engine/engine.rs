@@ -10,8 +10,7 @@ use crate::plugin::{MiddleWare, PipeLine};
 use crate::response::MetaResponse;
 use crate::utils;
 use crate::Parsed;
-//use futures::task::SpawnExt;
-//use futures_executor::ThreadPool;
+use http::Extensions;
 use signal_hook::flag as signal_flag;
 use std::collections::HashMap;
 use std::error::Error;
@@ -59,6 +58,12 @@ pub struct App<E> {
     /// return the [Request]'s [Body]
     /// if not set, just simply concat the two of them
     pub body_modifier: Option<Box<dyn for<'c, 'd> Fn(&'c Body, Option<&'d Body>) -> Body + Send>>,
+    pub(crate) exts_t_fn: Option<
+        Box<dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions) + Send>,
+    >,
+    pub(crate) exts_p_fn: Option<
+        Box<dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions) + Send>,
+    >,
     //pool: ThreadPool,
 }
 
@@ -81,6 +86,8 @@ impl<'a, E> App<E> {
             session_storer: None,
             session_loader: None,
             body_modifier: None,
+            exts_t_fn: None,
+            exts_p_fn: None,
             //pool: ThreadPool::new().unwrap(),
         }
     }
@@ -93,14 +100,36 @@ impl<'a, E> App<E> {
         let _ = spd;
     }
 
-    /// add an Session Loader
+    /// set the Session Loader
     pub fn session_loader(&mut self, loader: Box<dyn Fn(&str) -> Poly + Send>) {
         self.session_loader = Some(loader);
     }
 
-    /// add an Session Storer
+    /// set the Session Storer
     pub fn session_storer(&mut self, storer: Box<dyn for<'b> Fn(Poly, &'b ()) -> &'b str + Send>) {
         self.session_storer = Some(storer);
+    }
+
+    /// set the task extension handler
+    /// when make a couple of Task and Affix
+    pub fn exts_t(
+        &mut self,
+        f: Box<
+            dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions) + Send,
+        >,
+    ) {
+        self.exts_t_fn = Some(f);
+    }
+
+    /// set the affix extension handler
+    /// when make a couple of Task and Affix
+    pub fn exts_p(
+        &mut self,
+        f: Box<
+            dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions) + Send,
+        >,
+    ) {
+        self.exts_p_fn = Some(f);
     }
 
     /// modify the body of [Task], [Affix] in [Couple]
@@ -330,7 +359,12 @@ impl<'a, E> App<E> {
                     break;
                 }
                 let couple = Couple::new(task, Some(affix));
-                let req = Request::from_couple(&couple, self.body_modifier.as_ref());
+                let req = Request::from_couple(
+                    &couple,
+                    self.body_modifier.as_ref(),
+                    self.exts_t_fn.as_ref(),
+                    self.exts_p_fn.as_ref(),
+                );
                 self.couple.insert(couple.id, couple);
                 log::debug!("Created Request: {:?}", req);
                 reqs.push(req);
@@ -346,7 +380,12 @@ impl<'a, E> App<E> {
                     break;
                 }
                 let couple = Couple::new(task, None);
-                let req = Request::from_couple(&couple, self.body_modifier.as_ref());
+                let req = Request::from_couple(
+                    &couple,
+                    self.body_modifier.as_ref(),
+                    self.exts_t_fn.as_ref(),
+                    self.exts_p_fn.as_ref(),
+                );
                 log::trace!("Created request: {:?}", req);
                 reqs.push(req);
                 self.couple.insert(couple.id, couple);
@@ -645,7 +684,10 @@ impl<'a, E> App<E> {
         //skip the history and start new fields to staart with, some Affix required
         if self.args.skip {
             log::info!("New Session Started");
-            let tasks = spd.entry_task().await.unwrap();
+            let mut tasks = spd.entry_task().await.unwrap();
+            if let Some(ff) = middleware.task() {
+                ff(&mut tasks, self).await;
+            }
             self.task.as_mut().extend(tasks);
             self.info();
         } else {

@@ -483,6 +483,7 @@ pub fn parser(_attr: TokenStream, item: TokenStream) -> TokenStream {
     //let part2 = parse.seq();
     let tpl = r#"<+part1+> 
     use std::sync::Once;
+    use dyer::FNMAP;
     static ONCE: Once = Once::new();
     unsafe {
         ONCE.call_once(|| {
@@ -498,7 +499,6 @@ pub fn parser(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .replace("<+part1+>", part1)
         .replace("<+part2+>", parse.seq())
         .replace("<+ident+>", &ident);
-    //println!("item: {:?}", s);
     TokenStream::from_str(&s).unwrap()
 }
 

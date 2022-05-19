@@ -62,8 +62,8 @@ pub struct InnerRequest {
 /// extra data derived from the underlying protocol.
 #[derive(fmt::Debug, Default)]
 pub struct Exts(
-    pub(crate) Extensions,
-    pub(crate) Extensions,
+    pub Extensions,
+    pub Extensions,
     pub Extensions,
     pub Extensions,
 );
@@ -359,7 +359,7 @@ impl Request {
         &mut self.metar.exts.2
     }
 
-    /// get shared reference to body_fn of `Task`
+    /// get shared reference to body_fn of `Request`
     ///
     /// # Examples
     ///
@@ -389,7 +389,7 @@ impl Request {
     /// # use dyer::Request::*;
     /// # use http::*;
     /// # fn body_fn(_: Body) -> Body { todo!() }
-    /// let task = Request::default();
+    /// let req = Request::default();
     ///     .as_mut()
     ///     .body_fn_mut(body_fn);
     /// assert_eq!(*Request.body_fn(), body_fn);
@@ -404,7 +404,7 @@ impl Request {
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// let request = request::default();
     /// assert_eq!(request.info().used, 0);
     /// ```
@@ -412,15 +412,15 @@ impl Request {
         &self.metar.info
     }
 
-    /// get mutable reference to info of `Task`
+    /// get mutable reference to info of `Request`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// let request = request::default();
-    /// task.info_mut().unique = false;
-    /// assert_eq!(*task.info_ref().unique, false);
+    /// request.info_mut().unique = false;
+    /// assert_eq!(*request.info_ref().unique, false);
     /// ```
     pub fn info_mut(&mut self) -> &mut Info {
         &mut self.metar.info
@@ -500,6 +500,18 @@ impl Request {
     pub fn from_couple(
         couple: &Couple,
         f: Option<&Box<dyn for<'c, 'd> Fn(&'c Body, Option<&'d Body>) -> Body + Send>>,
+        exts_t_fn: Option<
+            &Box<
+                dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions)
+                    + Send,
+            >,
+        >,
+        exts_p_fn: Option<
+            &Box<
+                dyn for<'c, 'd> Fn(&'c Extensions, &'d Extensions) -> (Extensions, Extensions)
+                    + Send,
+            >,
+        >,
     ) -> Self {
         match couple.affix {
             Some(ref affix) => {
@@ -508,26 +520,13 @@ impl Request {
                     Some(ff) => ff(&couple.task.body, item),
                     None => Body::get_merged(&couple.task.body, item),
                 };
-                let mut ext_t = Extensions::new();
-                unsafe {
-                    std::ptr::copy(
-                        &couple.task.inner.extensions as *const _,
-                        &mut ext_t as *mut _,
-                        1,
-                    )
+                let (inner_t, exts_t) = match exts_t_fn {
+                    None => (Extensions::new(), Extensions::new()),
+                    Some(ff) => ff(&couple.task.inner.extensions, &couple.task.metat.exts),
                 };
-                let ext_p = if couple.affix.is_none() {
-                    Extensions::new()
-                } else {
-                    let mut ext_p = Extensions::new();
-                    unsafe {
-                        std::ptr::copy(
-                            &couple.affix.as_ref().unwrap().metap.exts as *const _,
-                            &mut ext_p as *mut _,
-                            1,
-                        )
-                    };
-                    ext_p
+                let (inner_p, exts_p) = match exts_p_fn {
+                    None => (Extensions::new(), Extensions::new()),
+                    Some(ff) => ff(&affix.inner.extensions, &affix.metap.exts),
                 };
                 let inner = InnerRequest {
                     uri: couple.task.inner.uri.clone(),
@@ -537,8 +536,8 @@ impl Request {
                     extensions: Exts(
                         //std::ptr::read(&couple.task.inner.extensions),
                         //std::ptr::read(&affix.inner.extensions),
-                        ext_t,
-                        ext_p,
+                        inner_t,
+                        inner_p,
                         Extensions::new(),
                         Extensions::new(),
                     ),
@@ -546,36 +545,12 @@ impl Request {
                 let mut info = couple.task.metat.info.clone();
                 info.able = f64::max(info.able, affix.metap.info.able);
                 info.id = couple.id;
-                let mut ext_t = Extensions::new();
-                unsafe {
-                    std::ptr::copy(&couple.task.metat.exts as *const _, &mut ext_t as *mut _, 1)
-                };
-                let ext_p = if couple.affix.is_none() {
-                    Extensions::new()
-                } else {
-                    let mut ext_p = Extensions::new();
-                    unsafe {
-                        std::ptr::copy(
-                            &couple.affix.as_ref().unwrap().metap.exts as *const _,
-                            &mut ext_p as *mut _,
-                            1,
-                        )
-                    };
-                    ext_p
-                };
                 let metar = MetaRequest {
                     info: info,
                     parser: couple.task.metat.parser.clone(),
                     err_parser: couple.task.metat.err_parser.clone(),
                     body_fn: None,
-                    exts: Exts(
-                        //std::ptr::read(&couple.task.metat.exts),
-                        //std::ptr::read(&affix.metap.exts),
-                        ext_t,
-                        ext_p,
-                        Extensions::new(),
-                        Extensions::new(),
-                    ),
+                    exts: Exts(exts_t, exts_p, Extensions::new(), Extensions::new()),
                 };
                 Self { inner, body, metar }
             }
@@ -587,33 +562,35 @@ impl Request {
                     // - task body + affix body
                     None => Body::get_merged(&couple.task.body, None),
                 };
-                let mut ext = Extensions::new();
-                unsafe {
-                    std::ptr::copy(
-                        &couple.task.inner.extensions as *const _,
-                        &mut ext as *mut _,
-                        1,
-                    )
+                let (inner_t, exts_t) = match exts_t_fn {
+                    None => (Extensions::new(), Extensions::new()),
+                    Some(ff) => ff(&couple.task.inner.extensions, &couple.task.metat.exts),
                 };
                 let inner = InnerRequest {
                     uri: couple.task.inner.uri.clone(),
                     method: couple.task.inner.method.clone(),
                     version: couple.task.inner.version,
                     headers: couple.task.inner.headers.clone(),
-                    extensions: Exts(ext, Extensions::new(), Extensions::new(), Extensions::new()),
+                    extensions: Exts(
+                        inner_t,
+                        Extensions::new(),
+                        Extensions::new(),
+                        Extensions::new(),
+                    ),
                 };
                 let mut info = couple.task.metat.info.clone();
                 info.id = couple.id;
-                let mut ext = Extensions::new();
-                unsafe {
-                    std::ptr::copy(&couple.task.metat.exts as *const _, &mut ext as *mut _, 1)
-                };
                 let metar = MetaRequest {
                     info: info,
                     parser: couple.task.metat.parser,
                     err_parser: couple.task.metat.err_parser,
                     body_fn: None,
-                    exts: Exts(ext, Extensions::new(), Extensions::new(), Extensions::new()),
+                    exts: Exts(
+                        exts_t,
+                        Extensions::new(),
+                        Extensions::new(),
+                        Extensions::new(),
+                    ),
                 };
                 Self { inner, body, metar }
             }
@@ -681,14 +658,14 @@ impl RequestBuilder {
         }
     }
 
-    /// set the uri of `Task`, if not called, the default value is "/"
+    /// set the uri of `request`, if not called, the default value is "/"
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .uri("https://example.com")
     ///     .parser(parser_fn)
     ///     .body(());
@@ -704,16 +681,16 @@ impl RequestBuilder {
         self
     }
 
-    /// get shared reference to uri of `TaskBuilder`
-    /// Same as `Task::uri(...)`
+    /// get shared reference to uri of `RequestBuilder`
+    /// Same as `request.uri(...)`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
     /// let uri = "https://example.com";
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .uri(uri)
     ///     .parser(parser_fn)
     ///     .body(());
@@ -723,20 +700,20 @@ impl RequestBuilder {
         &self.inner.uri
     }
 
-    /// set the method of `Task`
+    /// set the method of `Request`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # use http::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
     /// let method = Method::POST;
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .method(method)
     ///     .parser(parser_fn)
     ///     .body(());
-    /// assert_eq!(task.method_ref(), method);
+    /// assert_eq!(request.method_ref(), method);
     /// ```
     pub fn method<S>(mut self, method: S) -> Self
     where
@@ -749,34 +726,34 @@ impl RequestBuilder {
         self
     }
 
-    /// get shared reference to method of `TaskBuilder`
-    /// Same as `Task::method(...)`
+    /// get shared reference to method of `RequestBuilder`
+    /// Same as `request.method(...)`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
     /// let method = Method::POST;
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .method(method)
     ///     .parser(parser_fn)
     ///     .body(());
-    /// assert_eq!(task.method_ref(), method);
+    /// assert_eq!(request.method_ref(), method);
     /// ```
     pub fn method_ref(&self) -> &Method {
         &self.inner.method
     }
 
-    /// get shared reference to header of `TaskBuilder`
-    /// Same as `Task::headers(...)`
+    /// get shared reference to header of `RequestBuilder`
+    /// Same as `Request::headers(...)`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .header("accept", "*/*")
     ///     .parser(parser_fn)
     ///     .body(());
@@ -786,14 +763,14 @@ impl RequestBuilder {
         &self.inner.headers
     }
 
-    /// get mutable reference to header of `TaskBuilder`
+    /// get mutable reference to header of `RequestBuilder`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .header("accept", "*/*")
     ///     .parser(parser_fn)
     ///     .body(());
@@ -804,15 +781,15 @@ impl RequestBuilder {
         &mut self.inner.headers
     }
 
-    /// set the headers of `Task`
+    /// set the headers of `Request`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # use http::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .header("accept", "*/*")
     ///     .parser(parser_fn)
     ///     .body(());
@@ -835,15 +812,15 @@ impl RequestBuilder {
         self
     }
 
-    /// set the version of `Task`
+    /// set the version of `Request`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # use http::*;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .version(Version::HTTP_10)
     ///     .parser(parser_fn)
     ///     .body(());
@@ -854,17 +831,17 @@ impl RequestBuilder {
         self
     }
 
-    /// get shared reference to version of `TaskBuilder`
-    /// Same as `Task::version(...)`
+    /// get shared reference to version of `RequestBuilder`
+    /// Same as `Request::version(...)`
     ///
     /// # Examples
     ///
     /// ```rust
-    /// # use dyer::task::*;
+    /// # use dyer::request::*;
     /// # use http::Version;
     /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
     /// let version = Version::HTTP_10;
-    /// let task = TaskBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .version(version)
     ///     .parser(parser_fn)
     ///     .body(());
@@ -1007,7 +984,7 @@ impl RequestBuilder {
     /// # use dyer::Request::*;
     /// # use http::*;
     /// # fn body_fn(t: T, p: P) -> Body { todo!() }
-    /// let task = RequestBuilder::new()
+    /// let request = RequestBuilder::new()
     ///     .body_fn(body_fn)
     ///     .body(());
     /// assert_eq!(*Request.body_fn_ref(), body_fn);

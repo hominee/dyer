@@ -8,6 +8,18 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 
+/// get the function name of the function
+/// empty string returned if not works correctly
+pub fn function_name<T>(_: T) -> &'static str {
+    let name = std::any::type_name::<T>();
+    let segs = name.rsplitn(2, "::").collect::<Vec<_>>();
+    if !segs.is_empty() {
+        segs[0]
+    } else {
+        ""
+    }
+}
+
 /// load unfinished or extra data
 pub fn load<T>(
     path: &str,

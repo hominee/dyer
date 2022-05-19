@@ -81,7 +81,12 @@ pub async fn herr<E>(_res: &mut Vec<Result<Response, MetaResponse>>, _app: &mut 
                     item.metas.info.used += 1;
                     log::error!("{} Times Failure, Reuse This Task.", used + 1);
                     if let Some(couple) = _app.couple.get(&item.metas.info.id) {
-                        let req = Request::from_couple(couple, None);
+                        let req = Request::from_couple(
+                            couple,
+                            None,
+                            _app.exts_t_fn.as_ref(),
+                            _app.exts_p_fn.as_ref(),
+                        );
                         reqs.push(req);
                     }
                 }
@@ -103,7 +108,12 @@ pub async fn herr<E>(_res: &mut Vec<Result<Response, MetaResponse>>, _app: &mut 
                     m.info.used += 1;
                     log::error!("{} Times Failure, Reuse This Task.", used + 1);
                     if let Some(couple) = _app.couple.get(&m.info.id) {
-                        let req = Request::from_couple(couple, None);
+                        let req = Request::from_couple(
+                            couple,
+                            None,
+                            _app.exts_t_fn.as_ref(),
+                            _app.exts_p_fn.as_ref(),
+                        );
                         reqs.push(req);
                     }
                 }

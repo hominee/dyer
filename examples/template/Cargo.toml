@@ -15,7 +15,8 @@ name = "template"
 path = "src/bin/template.rs"
 
 [dependencies]
-dyer = { version = "3.0" }
+#dyer = { version = "3.1" }
+dyer = { path = "../.." }
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
 simple_logger = "1.11" 

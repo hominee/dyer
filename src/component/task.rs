@@ -146,7 +146,7 @@ impl MetaTask {
 
 impl fmt::Debug for MetaTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut parser = "Unknow";
+        let mut parser = "Unknow_or_Unset";
         let mut err_parser = None;
         if let Some((n, _)) = serde_fn::query(None, Some(self.parser)) {
             parser = n;
@@ -1225,22 +1225,9 @@ impl TaskBuilder {
     ///     .body(());
     /// assert_eq!(*task.parser_ref(), parser_fn);
     /// ```
-    pub fn parser<E>(
-        mut self,
-        parser: fn(Response) -> Parsed<E>,
-        parser_marker: &'static str,
-    ) -> Self {
+    pub fn parser<E>(mut self, parser: fn(Response) -> Parsed<E>) -> Self {
         let parser = parser as *const ();
-        use crate::plugin::deser;
         assert_ne!(0 as *const (), parser, "the parser cannot be NULL!");
-        if deser::serde_fn::query(Some(parser_marker), None).is_none()
-            && deser::serde_fn::query(None, Some(parser)).is_none()
-        {
-            log::debug!("set parser with marker: {}", parser_marker);
-            unsafe {
-                deser::FNMAP.push((parser_marker, parser));
-            }
-        }
         self.meta.parser = parser;
         self.parser_set = true;
         self
