@@ -3,6 +3,7 @@
 use crate::{component::Poly, engine::vault::Vault};
 use std::collections::hash_map::DefaultHasher;
 use std::convert::TryInto;
+#[cfg(any(feature = "std", feature = "default"))]
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::io::Write;
@@ -21,6 +22,7 @@ pub fn function_name<T>(_: T) -> &'static str {
 }
 
 /// load unfinished or extra data
+#[cfg(any(feature = "std", feature = "default"))]
 pub fn load<T>(
     path: &str,
     f: Option<&Box<dyn Fn(&str) -> Poly + Send>>,
@@ -50,6 +52,7 @@ where
 }
 
 /// store unfinished or extra data,
+#[cfg(any(feature = "std", feature = "default"))]
 pub(crate) fn stored<I, T>(
     path: &str,
     ens: &mut Vault<I>,
@@ -88,6 +91,7 @@ pub(crate) fn stored<I, T>(
 }
 
 /// handy tool to get the instant time of system time
+#[cfg(any(feature = "std", feature = "default"))]
 pub fn now() -> f64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

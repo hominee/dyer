@@ -41,7 +41,8 @@ impl AppFut {
                 break;
             }
         }
-        let _ = std::mem::replace(&mut self.index, item_cached);
+        item_cached.append(&mut self.index);
+        self.index = item_cached;
         Client::join_all(raw_results).await;
     }
 

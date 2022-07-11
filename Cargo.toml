@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "3.1.0"
+version = "3.2.1"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
@@ -22,15 +22,20 @@ futures-util = "0.3.17"
 async-trait = "0.1.51"
 #futures-executor ={ version= "0.3.17" }
 http = {version = "0.2.5"  }
-hyper = "0.13.8"
+hyper = { version = "0.13.8", features = [] }
 hyper-tls ="0.4.3"
 hyper-timeout = "0.3.1"
-brotli2 = "0.3.2"
-flate2 = "1.0.20"
+brotli2 = { version = "0.3.2", optional = true }
+flate2 = { version =  "1.0.20", optional = true }
 bytes = "0.5.6"
 signal-hook = "0.1.17"
 log = "0.4.13"
 dyer-macros = {path = "dyer-macros/", version = "0.2.0"}
+
+[features]
+std = []
+default = []
+compression = ["default", "dep:brotli2", "dep:flate2"]
 
 [dev-dependencies]
 select = "0.5.0"

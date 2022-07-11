@@ -9,7 +9,6 @@ use crate::request::Exts;
 use crate::response::InnerResponse;
 use crate::response::MetaResponse;
 use bytes::buf::ext::BufExt;
-//use futures_executor::block_on;
 use futures_util::{future::join_all, Future};
 use http::Extensions;
 use hyper::client::HttpConnector;
@@ -68,31 +67,27 @@ impl Client {
                         //let mut data = Bytes::from(body.bytes());
                         let mut reader = BufReader::new(body.reader());
                         // Response Content
-                        let mut data = String::new();
-                        //let mut data = Chunk::new();
-                        let encodings = header.headers.get("content-encoding");
-                        let mut encode = 2;
-                        if let Some(t) = encodings {
-                            let t = t.to_str().unwrap();
-                            if ["gzip", "deflate"].contains(&t) {
-                                encode = 0;
-                            } else if t == "br" {
-                                encode = 1;
+                        let mut data = Vec::new();
+                        if let Some(t) = header.headers.get("content-encoding") {
+                            match t.to_str() {
+                                #[cfg(feature = "compression")]
+                                Ok("gzip") | Ok("deflate") => {
+                                    let mut gz = flate2::read::GzDecoder::new(reader);
+                                    gz.read_to_end(&mut data).unwrap();
+                                }
+                                #[cfg(feature = "compression")]
+                                Ok("br") => {
+                                    let mut br = brotli2::read::BrotliDecoder::new(reader);
+                                    br.read_to_end(&mut data).unwrap();
+                                }
+                                _ => {
+                                    reader.read_to_end(&mut data).unwrap();
+                                }
                             }
+                        } else {
+                            reader.read_to_end(&mut data).unwrap();
                         }
 
-                        if encode == 0 {
-                            let mut gz = flate2::read::GzDecoder::new(reader);
-                            gz.read_to_string(&mut data).unwrap();
-                            //gz.read(&mut *data).unwrap();
-                        } else if encode == 1 {
-                            let mut br = brotli2::read::BrotliDecoder::new(reader);
-                            br.read_to_string(&mut data).unwrap();
-                            //br.read(&mut *data).unwrap();
-                        } else {
-                            reader.read_to_string(&mut data).unwrap();
-                            //reader.read(&mut *data).unwrap();
-                        }
                         let body = Body::from(data);
                         let res = hyper::Response::from_parts(header, body);
                         Ok((res, gap))
