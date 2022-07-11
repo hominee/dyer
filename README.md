@@ -1,14 +1,26 @@
-[dyer] is designed for reliable, flexible and fast web-crawling, providing some high-level, comprehensive  features without compromising speed.
+# [dyer](https://github.com/homelyguy/dyer)
 
-`dyer` provides some high-level features:  
+[![API Document](https://img.shields.io/docsrs/dyer/latest)](https://docs.rs/dyer)
+[![crates.io](https://img.shields.io/crates/v/dyer.svg)](https://crates.io/crates/dyer)
+[![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://homelyguy.github.io/dyer/)
+
+## Overview
+
+[dyer] is designed for reliable, flexible and fast Request-Response based service, including data processing, web-crawling and so on, providing some friendly,  interoperable, comprehensive  features without compromising speed.
+
+## Features
 
 * asynchronous, concurrent streaming and I/O, make the best of thread pool, network, and system
 resource.
 * Event-driven, once you set the initials and recursive generator, `dyer` will handle
-the rest of it.
+the rest of it interoperably.
 * User-friendly and flexible, `dyer` offers high-level, flexible, easy to use wrappers and APIs what does a lot for you.    
 
+## Guide
+
 **Get started** by installing [dyer-cli] and looking over the [examples].
+
+The [Cookbook](https://homelyguy.github.io/dyer/) gives a detailed view of dyer.
 
 [dyer]: https://docs.rs/dyer
 [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
