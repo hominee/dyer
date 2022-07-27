@@ -14,11 +14,10 @@ name = "simple-demo"
 path = "src/bin/simple_demo.rs"
 
 [dependencies]
-#dyer = { version = "3.1" }
-dyer = { path = "../.." }
+#dyer = { path = "../..", features = ["xpath", "proxy"]}
+dyer = { path = "../..", features = ["xpath"]}
 serde = { version = "*", features = ["derive"] }
-tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
+tokio = { version = "1.20", features = ["rt-multi-thread"]}
 simple_logger = "*"
-select = "*"
 serde_json = "*"
 log = "*"

@@ -29,10 +29,11 @@ impl Actor<Entities, Aff> for MyActor {
         // all infomation needed is uri and parser
         let task = Task::get("https://quotes.toscrape.com")
             .parser(parse_quote)
+            //.proxy("http://127.0.0.1:1080") // require feature `proxy` enabled
             .extensions(3i32)
-            .body(Body::empty(), "quote".into())
+            .body(Body::empty(), "quote")
             .unwrap();
-        println!("haha {:?}", task);
+        println!("{:?}", task);
         Ok(vec![task])
     }
 

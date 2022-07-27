@@ -2,7 +2,7 @@ use crate::entity::*;
 use dyer::*;
 
 #[dyer::parser]
-pub fn parse_quote(res: Response) -> Parsed<Entities> {
+pub fn parse_quote(mut res: Response) -> Parsed<Entities> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -11,28 +11,19 @@ pub fn parse_quote(res: Response) -> Parsed<Entities> {
         return r;
     }
     let mut quotes = Vec::new();
-    let s = std::str::from_utf8(res.body.bytes()).unwrap();
-    let doc = select::document::Document::from(s);
-    for node in doc.find(select::predicate::Class("quote")) {
-        let text = node
-            .find(select::predicate::Class("text"))
-            .next()
-            .unwrap()
-            .text();
-        let author = node
-            .find(select::predicate::Class("author"))
-            .next()
-            .unwrap()
-            .text();
+    for node in res.xpath("//*[@class=\"quote\"]") {
+        let text = node.findnodes(".//*[@class=\"text\"]/text()").unwrap()[0].get_content();
+        let author = node.findnodes(".//*[@class=\"author\"]/text()").unwrap()[0].get_content();
         let tags = node
-            .find(select::predicate::Class("tag"))
-            .map(|tag| tag.text())
-            .collect::<Vec<String>>();
+            .findnodes(".//*[@class=\"tag\"]/text()")
+            .unwrap()
+            .iter()
+            .map(|node| node.get_content())
+            .collect::<Vec<_>>();
 
         let mut s = DefaultHasher::new();
         text.hash(&mut s);
-        (dyer::utils::now() as u64).hash(&mut s);
-        let ss = i64::abs(s.finish() as i64);
+        let ss = s.finish() as i64;
         let len = text.len();
         let role = if len >= 70 { Roles::Long } else { Roles::Short };
         let tag = if tags.is_empty() {
@@ -52,18 +43,15 @@ pub fn parse_quote(res: Response) -> Parsed<Entities> {
     r.entities = quotes;
 
     // follow the next page if exists
-    let mut next_node = doc.find(select::predicate::Class("next"));
-    if let Some(nd) = next_node.next() {
+    let next_node = res.xpath("//*[@class=\"next\"]");
+    if !next_node.is_empty() {
         // next page exists
-        let next_url = nd
-            .find(select::predicate::Name("a"))
-            .next()
-            .unwrap()
-            .attr("href")
-            .unwrap();
-        let task = Task::get(format!("https://quotes.toscrape.com{}", next_url))
+        let nd = &next_node[0];
+        let next_url = nd.findnodes(".//a/@href").unwrap()[0].get_content();
+        let task = Task::builder()
+            .uri(format!("https://quotes.toscrape.com{}", next_url))
             .parser(parse_quote)
-            .body(Body::empty(), "quote".into())
+            .body(Body::empty(), "quote")
             .unwrap();
         r.task.push(task);
     }

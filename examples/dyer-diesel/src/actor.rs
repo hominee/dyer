@@ -1,7 +1,6 @@
 #[macro_use]
 extern crate diesel;
 extern crate dotenv;
-extern crate select;
 
 pub mod affix;
 pub mod entity;
@@ -34,7 +33,7 @@ impl Actor<Entities, Aff> for MyActor {
     async fn entry_task(&mut self) -> Result<Vec<Task>, Box<dyn std::error::Error>> {
         let task = Task::get(&self.start_url)
             .parser(parse_quote)
-            .body(Body::empty(), "quote".into())
+            .body(Body::empty(), "quote")
             .unwrap();
         Ok(vec![task])
     }

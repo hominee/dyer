@@ -2,7 +2,6 @@ extern crate crawler;
 extern crate diesel;
 extern crate dotenv;
 extern crate dyer;
-extern crate select;
 extern crate serde;
 extern crate simple_logger;
 extern crate tokio;
@@ -27,11 +26,11 @@ async fn main() {
         .unwrap();
     let middleware = MiddleWare::<Entities>::builder()
         .entity(&handle_entities)
-        .build("quote".into());
+        .build("quote");
     let pipeline = PipeLine::<Entities, &'static Conn>::builder()
         .initializer(&establish_connection)
         .entity(&store_quote)
-        .build("quote".into());
+        .build("quote");
     let mut actor = MyActor::new().await;
     let mut app = dyer::App::<Entities>::new();
     app.run(&mut actor, &middleware, &pipeline).await.unwrap();

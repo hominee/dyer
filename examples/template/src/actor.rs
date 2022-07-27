@@ -37,7 +37,7 @@ impl Actor<Entities, Aff> for MyActor {
             // here the marker `MyActor` is the same as
             // the type implemented trait `Acotr`
             // change it if you like as long as it is unique
-            .body(Body::empty(), "MyActor".into())
+            .body(Body::empty(), "MyActor")
             .unwrap();
         Ok(vec![task])
     }

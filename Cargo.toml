@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "3.2.1"
+version = "3.3.0"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
@@ -16,28 +16,31 @@ readme = "README.md"
 
 [dependencies]
 serde = {version="1.0.123", features=["derive"]}
-tokio = { version = "0.2.22", features = [ "rt-threaded"] }
-#futures = { version = "0.3.12"  }
+tokio = { version = "1.20.1", features = [ "rt-multi-thread", "macros"] }
 futures-util = "0.3.17"
 async-trait = "0.1.51"
 #futures-executor ={ version= "0.3.17" }
 http = {version = "0.2.5"  }
-hyper = { version = "0.13.8", features = [] }
-hyper-tls ="0.4.3"
-hyper-timeout = "0.3.1"
+hyper = { version = "0.14.20", features = ["client", "http1", "stream"] }
+hyper-tls ="0.5.0"
 brotli2 = { version = "0.3.2", optional = true }
 flate2 = { version =  "1.0.20", optional = true }
-bytes = "0.5.6"
 signal-hook = "0.1.17"
 log = "0.4.13"
 dyer-macros = {path = "dyer-macros/", version = "0.2.0"}
+#libxml = { git = "https://github.com/homelyguy/rust-libxml", rev="1eb47f0", optional = true }
+libxml = { version = "0.3.1", optional = true }
+hyper-proxy = { version = "0.9.1", optional = true }
+base64 = { version = "0.13.0", optional = true }
 
 [features]
 std = []
 default = []
 compression = ["default", "dep:brotli2", "dep:flate2"]
+xpath = ["dep:libxml"]
+proxy = ["dep:hyper-proxy", "dep:base64"]
+full = ["default", "compression", "xpath", "proxy"]
 
 [dev-dependencies]
-select = "0.5.0"
 simple_logger = "1.11.0"
 #serde_json = "1.0.57"

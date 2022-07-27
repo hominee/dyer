@@ -15,18 +15,10 @@ name = "crawler"
 path = "src/bin/crawler.rs"
 
 [dependencies]
-#dyer = { version = "3.1" }
-dyer = { path = "../.." }
+dyer = { path = "../..", features=["xpath"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
-tokio = { version = "0.2", features = ["rt-threaded", "macros"]}
+tokio = { version = "1.20", features = ["rt-multi-thread"]}
 simple_logger = "1.11" 
 diesel = {version = "1.4.1", features = ["sqlite", "mysql", "postgres", "serde_json",  "numeric"] }
 dotenv = "0.15"
-select = "*"
-
-
-
-
-
-

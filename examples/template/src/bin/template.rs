@@ -19,11 +19,11 @@ async fn main() {
     let middleware = MiddleWare::<Entities>::builder()
         .entity(&handle_entities)
         // Identifier of the middleware
-        .build("MyActor".into());
+        .build("MyActor");
     let pipeline = PipeLine::<Entities, std::fs::File>::builder()
         .initializer(&func_name)
         // Identifier of the pipeline
-        .build("MyActor".into());
+        .build("MyActor");
     let mut actor = MyActor::new().await;
     let mut app = dyer::App::<Entities>::new();
     app.run(&mut actor, &middleware, &pipeline).await.unwrap();

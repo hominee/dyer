@@ -16,6 +16,14 @@ resource.
 the rest of it interoperably.
 * User-friendly and flexible, `dyer` offers high-level, flexible, easy to use wrappers and APIs what does a lot for you.    
 
+## Feature Flag
+To reduce code redundancy and speed up compilation, dyer use feature flag to mark the necessary modules/functions, Currently here are some supported Features:
+
+- `xpath`: Enable parse the html response with xpath 
+- `compression`: Enable HTTP Compression: `br`, `deflate`, `gzip`
+- `proxy`: Enable use proxies
+- `full`: Enable all features
+
 ## Guide
 
 **Get started** by installing [dyer-cli] and looking over the [examples].
