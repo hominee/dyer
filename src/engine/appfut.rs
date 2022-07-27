@@ -48,11 +48,27 @@ impl AppFut {
 
     /// execute results from `get_idel` and feed it to a callback
     /// and update `index`
-    pub(crate) async fn await_join(&mut self, gap: f64, capacity: usize) {
+    pub(crate) fn cancell(&mut self, gap: f64, capacity: usize) {
         let idels = self.get_idel(gap, capacity);
         if !idels.is_empty() {
             log::info!(
-                "joining {} / {} for Response.",
+                "cancelling {} / {} for Response.",
+                idels.len(),
+                self.index.len() + idels.len(),
+            );
+            idels.into_iter().for_each(|idel| (&idel.2).abort());
+            //.collect::<Vec<Handle<()>>>();
+            //Client::join_all(tasks).await;
+        }
+    }
+
+    /// execute results from `get_idel` and feed it to a callback
+    /// and update `index`
+    pub(crate) async fn all(&mut self, gap: f64, capacity: usize) {
+        let idels = self.get_idel(gap, capacity);
+        if !idels.is_empty() {
+            log::info!(
+                "cancelling {} / {} for Response.",
                 idels.len(),
                 self.index.len() + idels.len(),
             );
@@ -77,7 +93,7 @@ impl AppFut {
         let now = utils::now();
         let mut items = Vec::with_capacity(capacity);
         while let Some(item) = self.index.pop_front() {
-            if item.1 + gap <= now && items.len() < capacity {
+            if item.1 + gap < now && items.len() < capacity {
                 let ele = (item.0, item.1, self.data.remove(&item.0).unwrap());
                 items.push(ele);
             } else {

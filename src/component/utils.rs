@@ -9,25 +9,21 @@ use std::hash::{Hash, Hasher};
 use std::io::Write;
 use std::io::{BufRead, BufReader};
 
-/// get the function name of the function
+/// get the type name of the data struture
 /// empty string returned if not works correctly
-pub fn function_name<T>(_: T) -> &'static str {
+pub fn type_name<T>(_: T) -> String {
     let name = std::any::type_name::<T>();
     let segs = name.rsplitn(2, "::").collect::<Vec<_>>();
     if !segs.is_empty() {
-        segs[0]
+        segs[0].into()
     } else {
-        ""
+        "".into()
     }
 }
 
 /// load unfinished or extra data
 #[cfg(any(feature = "std", feature = "default"))]
-pub fn load<T>(
-    path: &str,
-    f: Option<&Box<dyn Fn(&str) -> Poly + Send>>,
-    //f: Option<&'a dyn Fn(&'a str) -> T>,
-) -> Vec<T>
+pub fn load<T>(path: &str, f: Option<&Box<dyn Fn(&str) -> Poly + Send>>) -> Vec<T>
 where
     Poly: TryInto<T>,
 {

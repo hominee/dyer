@@ -2,7 +2,7 @@
 //! parse `Response`, generating `Affix`,
 //! generating `Task`, preparation before opening actor, affairs before closing actor.  
 
-use crate::component::{body::Body, couple::Couple, Affix, Client, Poly, Request, Response, Task};
+use crate::component::{body::Body, couple::Couple, Affix, Poly, Request, Response, Task};
 use crate::engine::Actor;
 use crate::engine::{appfut::AppFut, arg::ArgAffix, vault::Vault, ArgApp};
 use crate::plugin::Affixor;
@@ -230,7 +230,7 @@ impl<'a, E> App<E> {
                 let now = utils::now();
                 log::info!("{} requests spawned for Affix", 3);
                 let mut actor = spd.entry_affix().await.unwrap();
-                if let Some(req) = actor.invoke().await {
+                if let Some(mut req) = actor.invoke().await {
                     // use network-based way to generate affix
                     let mut affix = self.affix.clone();
                     let hash = req.metar.info.id;
@@ -240,7 +240,8 @@ impl<'a, E> App<E> {
                         // generate one `Affix`
                         // construct a new reqeust
                         log::trace!("Request that to generate Affix: {:?}", req.inner);
-                        let mut res = Client::exec_one(req).await;
+                        let client = req.get_client();
+                        let mut res = client.request(req).await;
                         actor.before_parse(Some(&mut res)).await;
                         if let Some(item) = actor.parse(Some(res)).await {
                             log::info!("Affix {}  generated", item.metap.info.id);
@@ -411,7 +412,7 @@ impl<'a, E> App<E> {
         let len_load = self.args.rate.as_mut().get_len(None).min(len);
         for _ in 0..len_load {
             let now = utils::now();
-            let req = self.req_tmp.as_mut().pop().unwrap();
+            let mut req = self.req_tmp.as_mut().pop().unwrap();
             let hash = req.metar.info.id;
             let mut app_arg = self.args.rate.clone();
             let mut app_res = self.res.clone();
@@ -419,7 +420,8 @@ impl<'a, E> App<E> {
             let handle = tokio::spawn(async move {
                 //let handle = self .pool .spawn_with_handle(async move {
                 log::info!("Crawling requests: {} ", &req.inner.uri);
-                match Client::exec_one(req).await {
+                let client = req.get_client();
+                match client.request(req).await {
                     Ok(res) => {
                         app_arg.as_mut().stamps.push(res.metas.info.gap);
                         app_res.as_mut().push(Ok(res));
@@ -531,14 +533,12 @@ impl<'a, E> App<E> {
         let threshold_tokio_task = self.args.join_gap;
         let capacity = self.args.round_req;
         if !self.fut_res.index.is_empty() {
-            self.fut_res
-                .await_join(threshold_tokio_task, capacity)
-                .await;
+            self.fut_res.cancell(threshold_tokio_task, capacity);
+            //self.fut_res.all(threshold_tokio_task, capacity).await;
         }
         if !self.fut_affix.index.is_empty() {
-            self.fut_affix
-                .await_join(threshold_tokio_task, capacity)
-                .await;
+            self.fut_affix.cancell(threshold_tokio_task, capacity);
+            //self.fut_affix.all(threshold_tokio_task, capacity).await;
         }
     }
 
@@ -729,7 +729,7 @@ impl<'a, E> App<E> {
                     log::info!("Joining All Futures");
                     let capacity = self.args.round_req;
                     while !self.fut_res.data.is_empty() {
-                        self.fut_res.await_join(0.0, capacity).await;
+                        self.fut_res.all(9999999.0, capacity).await;
                     }
 
                     // dispath them

@@ -37,4 +37,34 @@ pub trait Affixor {
 
     /// Things to do before step out  
     async fn close(&mut self);
+
+    /// get the marker of `Self`
+    fn marker(&self) -> String {
+        crate::utils::type_name(self)
+    }
+}
+
+#[test]
+fn test_affixor() {
+    struct Res {}
+    use crate::*;
+    extern crate async_trait;
+
+    #[async_trait::async_trait]
+    impl Affixor for Res {
+        async fn init(&mut self) {}
+        async fn invoke(&mut self) -> Option<Request> {
+            None
+        }
+        async fn after_invoke(&mut self) {}
+        async fn before_parse(&mut self, _: Option<&mut Result<Response, MetaResponse>>) {}
+        async fn parse(&mut self, _: Option<Result<Response, MetaResponse>>) -> Option<Affix> {
+            None
+        }
+        async fn after_parse(&mut self) {}
+        async fn close(&mut self) {}
+    }
+
+    let res = Res {};
+    assert_eq!(res.marker(), "Res");
 }

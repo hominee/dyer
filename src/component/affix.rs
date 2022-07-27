@@ -6,6 +6,8 @@
 //! [Task]: crate::component::task::Task
 //! [examples]: <https://github.com/HomelyGuy/dyer/tree/master/examples/>
 //!
+#[cfg(feature = "proxy")]
+use crate::component::proxy::{Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BinaryHeap;
 use std::convert::TryFrom;
@@ -26,6 +28,8 @@ pub struct Affix {
     pub(crate) body: Body,
     /// some metadata about this Affix,
     pub(crate) metap: MetaAffix,
+    #[cfg(feature = "proxy")]
+    pub(crate) proxy: Option<Proxy>,
 }
 
 /// Meta Data of the Affix
@@ -49,12 +53,15 @@ impl Hash for MetaAffix {
 
 impl fmt::Debug for Affix {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Affix")
+        let mut fmter = f.debug_struct("Affix");
+        fmter
             .field("headers", &self.inner.headers)
             .field("body", &self.body)
-            .field("metap", &self.metap)
-            // omit extensions
-            .finish()
+            .field("metap", &self.metap);
+        #[cfg(feature = "proxy")]
+        fmter.field("proxy", &self.proxy());
+        // omit extensions
+        fmter.finish()
     }
 }
 
@@ -171,6 +178,44 @@ impl Affix {
         &mut self.metap.info.rank
     }
 
+    /// get mutable reference to proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// let proxy = Proxy::default();
+    /// let affix = Affix::builder()
+    ///     .proxy(proxy)
+    ///     .body(());    
+    /// affix.proxy_mut().set_addr("http://127.0.0.1:1088").unwrap();
+    /// assert!(affix.proxy().is_some());
+    /// assert_eq!(affix.proxy().unwrap().addr(), "http://127.0.0.1:1088" );
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_mut(&mut self) -> Option<&mut Proxy> {
+        self.proxy.as_mut()
+    }
+
+    /// get shared reference to proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// let proxy = Proxy::default();
+    /// let affix = Affix::builder()
+    ///     .proxy(proxy)
+    ///     .body(());    
+    /// affix.proxy_mut().set_addr("http://127.0.0.1:1088").unwrap();
+    /// assert!(affix.proxy().is_some());
+    /// assert_eq!(affix.proxy().unwrap().addr(), "http://127.0.0.1:1088" );
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy(&self) -> Option<&Proxy> {
+        self.proxy.as_ref()
+    }
+
     /// get mutable reference to body of `Affix`
     ///
     /// # Examples
@@ -185,6 +230,7 @@ impl Affix {
     pub fn body_mut(&mut self) -> &mut Body {
         &mut self.body
     }
+
     /// get shared reference to body of `Affix`
     ///
     /// # Examples
@@ -198,6 +244,7 @@ impl Affix {
     pub fn body(&self) -> &Body {
         &self.body
     }
+
     /// Consume the affix and obtain the body
     ///
     /// # Examples
@@ -212,6 +259,7 @@ impl Affix {
     pub fn into_body(self) -> Body {
         self.body
     }
+
     /// Convert the body of the `Affix` with function
     ///
     /// # Examples
@@ -221,7 +269,7 @@ impl Affix {
     /// let affix = Affix::builder()
     ///     .body(vec![1,2,3]);
     /// let new_affix = affix.map(|v| v + 1 );    
-    /// assert_eq!(new_affix.body, vec![2,3,4]);
+    /// assert_eq!(new_affix.body(), &vec![2,3,4]);
     /// ```
     pub fn map<F>(self, f: F) -> Affix
     where
@@ -231,8 +279,11 @@ impl Affix {
             body: f(self.body),
             metap: self.metap,
             inner: self.inner,
+            #[cfg(feature = "proxy")]
+            proxy: self.proxy,
         }
     }
+
     /// Create new `affix` directly with body, inner data
     ///
     /// # Examples
@@ -246,17 +297,21 @@ impl Affix {
     /// inner.version = Version::HTTP_3;    
     /// let new_affix = affix::from_parts(inner, body, meta);
     /// ```
-    pub fn from_parts(headers: HeaderMap<HeaderValue>, body: Body, metap: MetaAffix) -> Self {
-        let inn = InnerAffix {
-            headers,
-            extensions: Extensions::new(),
-        };
+    pub fn from_parts(
+        inner: InnerAffix,
+        body: Body,
+        metap: MetaAffix,
+        #[cfg(feature = "proxy")] proxy: Option<Proxy>,
+    ) -> Self {
         Self {
-            inner: inn,
+            inner,
             body,
             metap,
+            #[cfg(feature = "proxy")]
+            proxy,
         }
     }
+
     /// split `affix` into body, inner data
     ///
     /// # Examples
@@ -268,8 +323,13 @@ impl Affix {
     ///     .body(vec![1,2,3]);    
     /// let (_inner, _body, _meta ) = affix.into_parts();
     /// ```
+    #[cfg(not(feature = "proxy"))]
     pub fn into_parts(self) -> (InnerAffix, Body, MetaAffix) {
         (self.inner, self.body, self.metap)
+    }
+    #[cfg(feature = "proxy")]
+    pub fn into_parts(self) -> (InnerAffix, Body, MetaAffix, Option<Proxy>) {
+        return (self.inner, self.body, self.metap, self.proxy);
     }
 }
 
@@ -314,6 +374,8 @@ impl Hash for InnerAffix {
 pub struct AffixBuilder {
     inner: InnerAffix,
     meta: MetaAffix,
+    #[cfg(feature = "proxy")]
+    proxy: Option<Proxy>,
 }
 
 impl AffixBuilder {
@@ -331,6 +393,8 @@ impl AffixBuilder {
         Self {
             inner: InnerAffix::default(),
             meta: MetaAffix::default(),
+            #[cfg(feature = "proxy")]
+            proxy: None,
         }
     }
 
@@ -571,6 +635,8 @@ impl AffixBuilder {
             inner: self.inner,
             metap: self.meta,
             body,
+            #[cfg(feature = "proxy")]
+            proxy: self.proxy,
         })
     }
 
@@ -602,5 +668,134 @@ impl AffixBuilder {
     pub fn meta(mut self, meta: MetaAffix) -> Self {
         self.meta = meta;
         self
+    }
+
+    /// get mutable reference to proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let affix = Affix::builder()
+    ///     .proxy("http://127.0.0.1:1088");
+    /// affix.proxy_mut().unwrap().set_addr("http://127.0.0.1:1080");
+    /// assert!(affix.proxy().unwrap().addr(), "http://127.0.0.1:1080");
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_mut(&mut self) -> Option<&mut Proxy> {
+        self.proxy.as_mut()
+    }
+
+    /// set no-authentication proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let proxy = Auth::new("http://127.0.0.1:1088");
+    /// let affix = Affix::builder()
+    ///     .proxy("http://127.0.0.1:1088")
+    ///     .body(());    
+    /// assert!(affix.proxy().is_some());
+    /// assert_eq!(affix.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy<T: Into<String>>(mut self, addr: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: None,
+        });
+    }
+
+    /// set basic-authentication proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_basic("username", "password");
+    /// let affix = Affix::builder()
+    ///     .proxy_auth_basic("http://127.0.0.1:1088", "username", "password")
+    ///     .body(());    
+    /// assert!(affix.proxy().is_some());
+    /// assert_eq!(affix.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_basic<T: Into<String>>(mut self, addr: T, username: T, password: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Basic(AuthBasic {
+                username: username.into(),
+                password: password.into(),
+            })),
+        });
+    }
+
+    /// set bearer-authentication proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_bearer("bearer token");
+    /// let affix = Affix::builder()
+    ///     .proxy_auth_bearer("http://127.0.0.1:1088", "bearer token")
+    ///     .body(());    
+    /// assert_eq!(affix.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_bearer<T: Into<String>>(mut self, addr: T, bearer: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Bearer(AuthBearer {
+                bearer: bearer.into(),
+            })),
+        });
+    }
+
+    /// set custom-authentication proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_custom("custom token");
+    /// let affix = Affix::builder()
+    ///     .proxy_auth_custom("http://127.0.0.1:1088", "custom token")
+    ///     .body(());    
+    /// assert_eq!(affix.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_custom<T: Into<String>>(mut self, addr: T, token: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Custom(AuthCustom {
+                token: token.into(),
+            })),
+        });
+    }
+
+    /// get shared reference to proxy of `Affix`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::affix::*;
+    /// # use dyer::proxy::*;
+    /// let affix = Affix::builder()
+    ///     .proxy("http://127.0.0.1:1088");
+    /// assert_eq!(task.proxy_ref().unwrap().addr(), "http://127.0.0.1:1088" );
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_ref(&self) -> Option<&Proxy> {
+        self.proxy.as_ref()
     }
 }

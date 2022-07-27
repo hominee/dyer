@@ -142,7 +142,7 @@ macro_rules! builder {
         #[doc = concat!("async fn ", stringify!($hd), "(_: &mut Vec<", stringify!($item), ">, _: &mut App<E>) {}" )]
         #[doc = concat!("let middleware = ", stringify!($bd))]
         #[doc = concat!("    ", stringify!(.$f),"(&", stringify!($hd), ")" ) ]
-        #[doc = "    .build(\"marker\".into());"]
+        #[doc = "    .build(\"marker\");"]
         #[doc = stringify!(assert!(middleware.$hd.is_some()) )]
         #[doc = "```"]
         pub fn $f(
@@ -165,7 +165,7 @@ macro_rules! builder {
         #[doc = concat!("async fn ", stringify!($hd), "(_: &mut Vec<", stringify!($item), ">, _: &mut App<E>) {}" )]
         #[doc = concat!("let middleware = ", stringify!($bd))]
         #[doc = concat!("    ", stringify!(.$f),"(&", stringify!($hd), ")" ) ]
-        #[doc = "    .build(\"marker\".into());"]
+        #[doc = "    .build(\"marker\");"]
         #[doc = stringify!(assert_eq!(middleware.$ref(), Some($hd)) )]
         #[doc = "```"]
         pub fn $ref(&self) ->
@@ -220,7 +220,7 @@ impl<'md, E> MiddleWare<'md, E> {
     /// async fn handle_task(&mut Vec<Task>, &mut App<E>) {}
     /// let middleware = Middleware::builder()
     ///     .task(handle_task)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// ```
     pub fn builder() -> MiddleWareBuilder<'md, E> {
         MiddleWareBuilder::new()
@@ -235,7 +235,7 @@ impl<'md, E> MiddleWare<'md, E> {
     /// async fn handle_task(&mut Vec<Task>, &mut App<E>) {}
     /// let middleware = MiddleWare::builder()
     ///     .rank(1)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(middleware.rank(), 0);
     /// ```
     pub fn rank(&self) -> i16 {
@@ -251,7 +251,7 @@ impl<'md, E> MiddleWare<'md, E> {
     /// async fn handle_task(&mut Vec<Task>, &mut App<E>) {}
     /// let middleware = MiddleWare::builder()
     ///     .task(handle_task)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// middleware.rank_mut() = 3;
     /// assert_eq!(middleware.rank(), 3);
     /// ```
@@ -267,7 +267,7 @@ impl<'md, E> MiddleWare<'md, E> {
     /// # use dyer::middleware::*;
     /// let mut middleware = Middleware::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// middleware.extension_mut().insert(2i32);
     /// ```
     pub fn extensions_mut(&mut self) -> &mut Extensions {
@@ -282,7 +282,7 @@ impl<'md, E> MiddleWare<'md, E> {
     /// # use dyer::middleware::*;
     /// let middleware = Middleware::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(middleware.extensions().get::<i32>(), 1);
     /// ```
     pub fn extensions(&self) -> &Extensions {
@@ -398,9 +398,9 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
     /// async fn handle_entity(_: &mut Vec<E>, _: &mut App<E>) {}
     /// let middleware = MiddlewareBuilder::new();
     ///     .entity(handle_entity)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// ```
-    pub fn build(self, marker: String) -> MiddleWare<'md, E> {
+    pub fn build<T: Into<String>>(self, marker: T) -> MiddleWare<'md, E> {
         let all = self.handle_task.is_some()
             || self.handle_affix.is_some()
             || self.handle_req.is_some()
@@ -417,7 +417,7 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
             handle_entity: self.handle_entity,
             handle_err: self.handle_err,
             handle_yerr: self.handle_yerr,
-            marker,
+            marker: marker.into(),
             rank: self.rank,
             extensions: self.extensions,
         }
@@ -431,7 +431,7 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
     /// # use dyer::middleware::*;
     /// let middleware = middleware::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(middleware.extensions().get::<i32>(), 1);
     /// ```
     pub fn extensions<S>(mut self, extensions: S) -> Self
@@ -450,7 +450,7 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
     /// # use dyer::middleware::*;
     /// let middleware = middleware::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(middleware.extensions_ref().get::<i32>(), 1);
     /// ```
     pub fn extensions_ref(&self) -> &Extensions {
@@ -465,7 +465,7 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
     /// # use dyer::middleWare::*;
     /// let middleware = MiddleWareBuilder::new()
     ///     .rank(1)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(middleware.rank_ref(), 1);
     /// ```
     pub fn rank(mut self, rank: i16) -> Self {
@@ -481,7 +481,7 @@ impl<'md, E> MiddleWareBuilder<'md, E> {
     /// # use dyer::middleware::*;
     /// let middleware = MiddleWareBuilder::new()
     ///     .rank(1)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// middleware.rank_mut() = 3;
     /// assert_eq!(middleware.rank_ref(), 3);
     /// ```

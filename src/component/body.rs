@@ -3,12 +3,11 @@
 //! NOTE that it is [Bytes] based, not all data structure supported
 //!
 use crate::component::utils;
-use bytes::{Buf, Bytes};
 use core::ops::Deref;
+use hyper::body::{Buf, Bytes};
 use serde::de::{self, MapAccess, SeqAccess, Visitor};
 use serde::{ser::SerializeSeq, Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::vec_deque::{Iter, IterMut};
-use std::io::IoSlice;
 use std::marker::PhantomData;
 use std::ops::DerefMut;
 use std::{borrow::Cow, collections::VecDeque, str};
@@ -48,6 +47,10 @@ impl Chunk {
     pub fn new() -> Self {
         Self(Bytes::new(), Kind::Byte)
     }
+
+    pub fn inner(self) -> Bytes {
+        self.0
+    }
 }
 
 impl Deref for Chunk {
@@ -70,11 +73,8 @@ impl Buf for Body {
     }
 
     #[inline]
-    fn bytes(&self) -> &[u8] {
-        self.inner
-            .front()
-            .map(|b| Buf::bytes(&b.0))
-            .unwrap_or_default()
+    fn chunk(&self) -> &[u8] {
+        self.inner.front().map(|b| &*b.0).unwrap_or_default()
     }
 
     #[inline]
@@ -95,20 +95,22 @@ impl Buf for Body {
         }
     }
 
-    #[inline]
-    fn bytes_vectored<'t>(&'t self, dst: &mut [IoSlice<'t>]) -> usize {
-        if dst.is_empty() {
-            return 0;
-        }
-        let mut vecs = 0;
-        for buf in &self.inner {
-            vecs += buf.0.bytes_vectored(&mut dst[vecs..]);
-            if vecs == dst.len() {
-                break;
-            }
-        }
-        vecs
-    }
+    /*
+     *#[inline]
+     *fn bytes_vectored<'t>(&'t self, dst: &mut [IoSlice<'t>]) -> usize {
+     *    if dst.is_empty() {
+     *        return 0;
+     *    }
+     *    let mut vecs = 0;
+     *    for buf in &self.inner {
+     *        vecs += buf.0.bytes_vectored(&mut dst[vecs..]);
+     *        if vecs == dst.len() {
+     *            break;
+     *        }
+     *    }
+     *    vecs
+     *}
+     */
 }
 
 impl Hash for Body {
@@ -138,7 +140,7 @@ impl Body {
     }
 
     pub fn len(&self) -> usize {
-        self.inner.len()
+        self.inner.iter().map(|buf| buf.0.remaining()).sum()
     }
 
     pub fn push_back(&mut self, chunk: Chunk) {
@@ -189,6 +191,10 @@ impl Body {
         self.inner.iter_mut()
     }
 
+    pub fn into_inner(self) -> VecDeque<Chunk> {
+        self.inner
+    }
+
     pub fn get(&self, index: usize) -> Option<&Chunk> {
         self.inner.get(index)
     }
@@ -200,6 +206,21 @@ impl Body {
     pub fn swap(&mut self, i: usize, j: usize) {
         self.inner.swap(i, j);
     }
+
+    pub fn bytes(&self) -> Vec<u8> {
+        self.inner
+            .iter()
+            .flat_map(|chunk| chunk.0.slice(0..))
+            .collect()
+        //vec![]
+    }
+}
+
+#[test]
+fn test_bytes() {
+    let mut body = Body::from("Hello ");
+    body.extend([Chunk::from("World!")]);
+    assert_eq!(body.bytes()[..], b"Hello World!"[..]);
 }
 
 /*

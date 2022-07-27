@@ -23,10 +23,14 @@ pub mod client;
 pub mod couple;
 pub mod info;
 pub mod parsed;
+#[cfg(feature = "proxy")]
+pub mod proxy;
 pub mod request;
 pub mod response;
 pub mod task;
 pub mod utils;
+#[cfg(feature = "xpath")]
+pub mod xpath;
 
 use std::convert::TryInto;
 
@@ -143,15 +147,18 @@ impl TryInto<Response> for Poly {
 pub use affix::Affix;
 #[doc(hidden)]
 pub use body::{Body, Chunk, Kind};
-pub use bytes::{Buf, Bytes};
 #[doc(hidden)]
-pub use client::Client;
+pub use client::{Client, ClientType, CLIENTPOOL};
 #[doc(hidden)]
 pub use couple::Couple;
+pub use hyper::body::{Buf, Bytes};
 #[doc(hidden)]
 pub use info::Info;
 #[doc(hidden)]
 pub use parsed::Parsed;
+#[cfg(feature = "proxy")]
+#[doc(hidden)]
+pub use proxy::{Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
 #[doc(hidden)]
 pub use request::{Exts, InnerRequest, MetaRequest, Request, RequestBuilder};
 #[doc(hidden)]

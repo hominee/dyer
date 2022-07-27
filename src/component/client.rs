@@ -8,16 +8,28 @@ use crate::component::{utils, Request, Response};
 use crate::request::Exts;
 use crate::response::InnerResponse;
 use crate::response::MetaResponse;
-use bytes::buf::ext::BufExt;
 use futures_util::{future::join_all, Future};
 use http::Extensions;
+use hyper::body::Buf;
 use hyper::client::HttpConnector;
-use hyper_timeout::TimeoutConnector;
+#[cfg(feature = "proxy")]
+use hyper_proxy::ProxyConnector;
 use hyper_tls::HttpsConnector;
+use std::collections::HashMap;
 use std::io::{BufReader, Read};
-use std::sync::Once;
 
-type MClient = hyper::Client<TimeoutConnector<HttpsConnector<HttpConnector>>>;
+//type MClient = hyper::Client<HttpsConnector<HttpConnector>>;
+type ClientPlain = hyper::Client<HttpsConnector<HttpConnector>>;
+#[cfg(feature = "proxy")]
+type ClientProxy = hyper::Client<ProxyConnector<HttpConnector>>;
+
+pub enum ClientType {
+    Plain(ClientPlain),
+    #[cfg(feature = "proxy")]
+    Proxy(ClientProxy),
+}
+
+pub static mut CLIENTPOOL: Option<HashMap<u64, Client>> = None;
 
 // TODO add proxy support
 /// Client that take [Request] and execute, return [Response]
@@ -27,48 +39,140 @@ type MClient = hyper::Client<TimeoutConnector<HttpsConnector<HttpConnector>>>;
 /// - gzip
 /// - br
 /// - deflate
-pub struct Client;
+pub struct Client {
+    pub id: u64,
+    pub(crate) inner: ClientType,
+}
 
 impl Client {
-    /// new static client
-    fn new(con: u64, read: u64, write: u64) -> &'static MClient {
-        static INIT: Once = Once::new();
-        static mut VAL: Option<MClient> = None;
+    pub fn new_plain() -> &'static Client {
+        let id = 0;
         unsafe {
-            INIT.call_once(|| {
-                let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
-                let mut conn = hyper_timeout::TimeoutConnector::new(https);
-                conn.set_connect_timeout(Some(std::time::Duration::from_secs(con)));
-                conn.set_read_timeout(Some(std::time::Duration::from_secs(read)));
-                conn.set_write_timeout(Some(std::time::Duration::from_secs(write)));
-                let item = hyper::Client::builder().build::<_, hyper::Body>(conn);
-                VAL = Some(item);
-            });
-            VAL.as_ref().unwrap()
+            if let Some(d) = CLIENTPOOL.as_ref().and_then(|pool| pool.get(&id)) {
+                return d;
+            }
+        }
+        let https = HttpsConnector::new();
+        let client = hyper::Client::builder().build::<_, hyper::Body>(https);
+        let downloader = Client {
+            id,
+            inner: ClientType::Plain(client),
+        };
+        unsafe {
+            match CLIENTPOOL {
+                None => {
+                    let mut pool = HashMap::new();
+                    pool.insert(id, downloader);
+                    CLIENTPOOL = Some(pool);
+                }
+                Some(ref mut pool) => {
+                    pool.insert(id, downloader);
+                }
+            }
+            CLIENTPOOL.as_ref().unwrap().get(&id).unwrap()
         }
     }
 
-    /// this function requires a `hyper::Request` and `hyper::Client` to return the Response
+    /*
+     * /// new static client
+     * fn new() -> &'static MClient {
+     *    static INIT: Once = Once::new();
+     *    static mut VAL: Option<MClient> = None;
+     *    unsafe {
+     *        INIT.call_once(|| {
+     *            let https: HttpsConnector<HttpConnector> = HttpsConnector::new();
+     *            let item = hyper::Client::builder().build::<_, hyper::Body>(https);
+     *            VAL = Some(item);
+     *        });
+     *        VAL.as_ref().unwrap()
+     *    }
+     *}
+     */
+
+    /*
+     *    /// this function requires a `hyper::Request` and `hyper::Client` to return the Response
+     *    /// Poll the `Request`, and asynchronously aggregate data from
+     *    /// server.
+     *    pub async fn exec(
+     *        req: hyper::Request<hyper::Body>,
+     *    ) -> Result<(hyper::Response<Body>, f64), Box<dyn std::error::Error>> {
+     *        let client = Client::new();
+     *        let tic = utils::now();
+     *        match client.request(req).await {
+     *            Ok(response) => {
+     *                let toc = utils::now();
+     *                let gap = toc - tic;
+     *                let (header, bd) = response.into_parts();
+     *                let bod = hyper::body::aggregate(bd).await;
+     *                match bod {
+     *                    Ok(body) => {
+     *                        //let mut data = Bytes::from(body.bytes());
+     *                        let mut reader = BufReader::new(body.reader());
+     *                        // Response Content
+     *                        let mut data = Vec::new();
+     *                        if let Some(t) = header.headers.get("content-encoding") {
+     *                            match t.to_str() {
+     *                                #[cfg(feature = "compression")]
+     *                                Ok("gzip") | Ok("deflate") => {
+     *                                    let mut gz = flate2::read::GzDecoder::new(reader);
+     *                                    gz.read_to_end(&mut data).unwrap();
+     *                                }
+     *                                #[cfg(feature = "compression")]
+     *                                Ok("br") => {
+     *                                    let mut br = brotli2::read::BrotliDecoder::new(reader);
+     *                                    br.read_to_end(&mut data).unwrap();
+     *                                }
+     *                                _ => {
+     *                                    reader.read_to_end(&mut data).unwrap();
+     *                                }
+     *                            }
+     *                        } else {
+     *                            reader.read_to_end(&mut data).unwrap();
+     *                        }
+     *
+     *                        let body = Body::from(data);
+     *                        let res = hyper::Response::from_parts(header, body);
+     *                        Ok((res, gap))
+     *                    }
+     *                    Err(e) => Err(e.into()),
+     *                }
+     *            }
+     *            Err(e) => {
+     *                if e.is_canceled() {
+     *                    log::error!("Timeout request: {:?}", e);
+     *                } else {
+     *                    log::error!("Failed request: {:?}", e);
+     *                }
+     *                Err(e.into())
+     *            }
+     *        }
+     *    }
+     */
+
+    /// this function requires a `Request` and `hyper::Client` to return the Response
     /// Poll the `Request`, and asynchronously aggregate data from
     /// server.
-    pub async fn exec(
-        req: hyper::Request<hyper::Body>,
-    ) -> Result<(hyper::Response<Body>, f64), Box<dyn std::error::Error>> {
-        let client = Client::new(7, 23, 7);
+    pub async fn request(&self, req: Request) -> Result<Response, MetaResponse> {
+        let (mta, req, ext_t, ext_p) = req.into();
+        let mut mta = MetaResponse::from(mta);
         let tic = utils::now();
-        match client.request(req).await {
+        let result = match self.inner {
+            ClientType::Plain(ref client) => client.request(req).await,
+            #[cfg(feature = "proxy")]
+            ClientType::Proxy(ref client) => client.request(req).await,
+        };
+        let toc = utils::now();
+        match result {
             Ok(response) => {
-                let toc = utils::now();
-                let gap = toc - tic;
-                let (header, bd) = response.into_parts();
-                let bod = hyper::body::aggregate(bd).await;
+                let (parts, body_future) = response.into_parts();
+                let bod = hyper::body::aggregate(body_future).await;
                 match bod {
                     Ok(body) => {
                         //let mut data = Bytes::from(body.bytes());
                         let mut reader = BufReader::new(body.reader());
                         // Response Content
                         let mut data = Vec::new();
-                        if let Some(t) = header.headers.get("content-encoding") {
+                        if let Some(t) = parts.headers.get("content-encoding") {
                             match t.to_str() {
                                 #[cfg(feature = "compression")]
                                 Ok("gzip") | Ok("deflate") => {
@@ -89,40 +193,54 @@ impl Client {
                         }
 
                         let body = Body::from(data);
-                        let res = hyper::Response::from_parts(header, body);
-                        Ok((res, gap))
+                        let inn = InnerResponse {
+                            status: parts.status,
+                            version: parts.version,
+                            headers: parts.headers,
+                            extensions: Exts(ext_t, ext_p, Extensions::new(), parts.extensions),
+                        };
+                        mta.info.gap = toc - tic;
+                        let ret = Response::from_parts(inn, body, mta);
+                        Ok(ret)
                     }
-                    Err(e) => Err(e.into()),
+                    Err(_) => Err(mta),
+                    //Err(e) => Err(e.into()),
                 }
             }
             Err(e) => {
-                log::error!("Failed request: {:?}", e);
-                Err(e.into())
+                if format!("{:?}", e).contains("Cancelled") {
+                    log::error!("Timeout request: {:?}", e);
+                } else {
+                    log::error!("Failed request: {:?}", e);
+                }
+                Err(mta)
             }
         }
     }
 
-    /// execute only one `Request` for common use.
-    pub async fn exec_one(req: Request) -> Result<Response, MetaResponse> {
-        let (mta, request, ext_t, ext_p) = req.into();
-        let mut mta = MetaResponse::from(mta);
-        let response = Client::exec(request).await;
-        match response {
-            Ok(data) => {
-                let (parts, body) = data.0.into_parts();
-                let inn = InnerResponse {
-                    status: parts.status,
-                    version: parts.version,
-                    headers: parts.headers,
-                    extensions: Exts(ext_t, ext_p, Extensions::new(), parts.extensions),
-                };
-                mta.info.gap = data.1;
-                let ret = Response::from_parts(inn, body, mta);
-                Ok(ret)
-            }
-            Err(_) => Err(mta),
-        }
-    }
+    /*
+     * /// execute only one `Request` for common use.
+     *pub async fn exec_one(req: Request) -> Result<Response, MetaResponse> {
+     *    let (mta, request, ext_t, ext_p) = req.into();
+     *    let mut mta = MetaResponse::from(mta);
+     *    let response = Client::exec(request).await;
+     *    match response {
+     *        Ok(data) => {
+     *            let (parts, body) = data.0.into_parts();
+     *            let inn = InnerResponse {
+     *                status: parts.status,
+     *                version: parts.version,
+     *                headers: parts.headers,
+     *                extensions: Exts(ext_t, ext_p, Extensions::new(), parts.extensions),
+     *            };
+     *            mta.info.gap = data.1;
+     *            let ret = Response::from_parts(inn, body, mta);
+     *            Ok(ret)
+     *        }
+     *        Err(_) => Err(mta),
+     *    }
+     *}
+     */
 
     /// A wrapper of futures's function block_on
     ///

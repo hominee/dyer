@@ -4,6 +4,8 @@
 //! as a builder to create requests. Typically you’ll import the http::Request type rather than
 //! reaching into this module itself.
 //!
+#[cfg(feature = "proxy")]
+use crate::component::proxy::{Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
 use crate::plugin::deser::*;
 use crate::utils;
 use crate::{
@@ -33,18 +35,26 @@ pub struct Task {
     //pub meta: Meta,
     /// some metadata about this Task,
     pub(crate) metat: MetaTask,
+    /// proxy for this task
+    #[cfg(feature = "proxy")]
+    pub(crate) proxy: Option<Proxy>,
 }
 
 impl fmt::Debug for Task {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Task")
+        let mut fmter = f.debug_struct("Task");
+        fmter
             .field("uri", self.uri())
             .field("method", self.method())
             .field("version", &self.version())
             .field("headers", &self.headers())
             .field("body", &self.body())
-            .field("metat", &self.metat)
-            .finish()
+            .field("metat", &self.metat);
+
+        #[cfg(feature = "proxy")]
+        fmter.field("proxy", &self.proxy);
+
+        fmter.finish()
     }
 }
 
@@ -146,7 +156,7 @@ impl MetaTask {
 
 impl fmt::Debug for MetaTask {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut parser = "Unknow_or_Unset";
+        let mut parser = "Unknow_or_KnownButUnset";
         let mut err_parser = None;
         if let Some((n, _)) = serde_fn::query(None, Some(self.parser)) {
             parser = n;
@@ -815,6 +825,8 @@ impl Task {
             body: f(self.body),
             metat: self.metat,
             inner: self.inner,
+            #[cfg(feature = "proxy")]
+            proxy: self.proxy,
         }
     }
 
@@ -833,8 +845,18 @@ impl Task {
     /// inner.version = Version::HTTP_3;
     /// let new_task = Task::from_parts(inner, body, meta);
     /// ```
+    #[cfg(not(feature = "proxy"))]
     pub fn from_parts(inner: InnerTask, body: Body, metat: MetaTask) -> Self {
         Self { inner, body, metat }
+    }
+    #[cfg(feature = "proxy")]
+    pub fn from_parts(inner: InnerTask, body: Body, metat: MetaTask, proxy: Option<Proxy>) -> Self {
+        Self {
+            inner,
+            body,
+            metat,
+            proxy,
+        }
     }
 
     /// split `Task` into body, inner data
@@ -850,8 +872,13 @@ impl Task {
     ///     .body(vec![1,2,3]);
     /// let (_inner, _body, _meta ) = task.into_parts();
     /// ```
+    #[cfg(not(feature = "proxy"))]
     pub fn into_parts(self) -> (InnerTask, Body, MetaTask) {
         (self.inner, self.body, self.metat)
+    }
+    #[cfg(feature = "proxy")]
+    pub fn into_parts(self) -> (InnerTask, Body, MetaTask, Option<Proxy>) {
+        (self.inner, self.body, self.metat, self.proxy)
     }
 }
 
@@ -872,6 +899,8 @@ pub struct TaskBuilder {
     inner: InnerTask,
     meta: MetaTask,
     parser_set: bool,
+    #[cfg(feature = "proxy")]
+    proxy: Option<Proxy>,
 }
 
 impl TaskBuilder {
@@ -895,6 +924,8 @@ impl TaskBuilder {
             inner: InnerTask::new(),
             meta: MetaTask::new(),
             parser_set: false,
+            #[cfg(feature = "proxy")]
+            proxy: None,
         }
     }
 
@@ -1342,7 +1373,7 @@ impl TaskBuilder {
     ///     .parser(parser_fn)
     ///     .body(());
     /// ```
-    pub fn body(mut self, body: Body, marker: String) -> http::Result<Task> {
+    pub fn body<R: Into<String>>(mut self, body: Body, marker: R) -> http::Result<Task> {
         assert!(
             self.parser_set,
             "set parser is required before building the Task"
@@ -1360,11 +1391,13 @@ impl TaskBuilder {
         if self.meta.info.created == 0.0 {
             self.meta.info.created = utils::now();
         }
-        self.meta.info.marker = marker;
+        self.meta.info.marker = marker.into();
         Ok(Task {
             inner: self.inner,
             metat: self.meta,
             body,
+            #[cfg(feature = "proxy")]
+            proxy: self.proxy,
         })
     }
 
@@ -1400,5 +1433,135 @@ impl TaskBuilder {
     pub fn meta(mut self, meta: MetaTask) -> Self {
         self.meta = meta;
         self
+    }
+
+    /// get mutable reference to proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let task = Task::builder()
+    ///     .proxy("http://127.0.0.1:1088");
+    /// task.proxy_mut().unwrap().set_addr("http://127.0.0.1:1080");
+    /// assert!(task.proxy().unwrap().addr(), "http://127.0.0.1:1080");
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_mut(&mut self) -> Option<&mut Proxy> {
+        self.proxy.as_mut()
+    }
+
+    /// set no-authentication proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let proxy = Auth::new("http://127.0.0.1:1088");
+    /// let task = Task::builder()
+    ///     .proxy("http://127.0.0.1:1088")
+    ///     .body(());    
+    /// assert!(task.proxy().is_some());
+    /// assert_eq!(task.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy<T: Into<String>>(mut self, addr: T) -> Self {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: None,
+        });
+        self
+    }
+
+    /// set basic-authentication proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_basic("username", "password");
+    /// let task = Task::builder()
+    ///     .proxy_auth_basic("http://127.0.0.1:1088", "username", "password")
+    ///     .body(());    
+    /// assert!(task.proxy().is_some());
+    /// assert_eq!(task.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_basic<T: Into<String>>(mut self, addr: T, username: T, password: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Basic(AuthBasic {
+                username: username.into(),
+                password: password.into(),
+            })),
+        });
+    }
+
+    /// set bearer-authentication proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_bearer("bearer token");
+    /// let task = Task::builder()
+    ///     .proxy_auth_bearer("http://127.0.0.1:1088", "bearer token")
+    ///     .body(());    
+    /// assert_eq!(task.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_bearer<T: Into<String>>(mut self, addr: T, bearer: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Bearer(AuthBearer {
+                bearer: bearer.into(),
+            })),
+        });
+    }
+
+    /// set custom-authentication proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let mut proxy = Auth::new("http://127.0.0.1:1088");
+    /// proxy.set_auth_custom("custom token");
+    /// let task = Task::builder()
+    ///     .proxy_auth_custom("http://127.0.0.1:1088", "custom token")
+    ///     .body(());    
+    /// assert_eq!(task.proxy().unwrap(), &proxy);
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_auth_custom<T: Into<String>>(mut self, addr: T, token: T) {
+        self.proxy = Some(Proxy {
+            addr: addr.into(),
+            auth: Some(Auth::Custom(AuthCustom {
+                token: token.into(),
+            })),
+        });
+    }
+
+    /// get shared reference to proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let task = Task::builder()
+    ///     .proxy("http://127.0.0.1:1088");
+    /// assert_eq!(task.proxy_ref().unwrap().addr(), "http://127.0.0.1:1088" );
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_ref(&self) -> Option<&Proxy> {
+        self.proxy.as_ref()
     }
 }

@@ -9,6 +9,8 @@ use crate::component::{body::Body, info::Info, request::MetaRequest, utils};
 use crate::plugin::deser::*;
 use crate::request::Exts;
 use http::{header::HeaderName, Extensions, HeaderMap, HeaderValue, StatusCode, Version};
+#[cfg(feature = "xpath")]
+use libxml::{tree::Document, xpath::Context};
 use std::{convert::TryFrom, fmt};
 
 /// An Wrapper of [http::Response]
@@ -29,7 +31,19 @@ pub struct Response {
     pub body: Body,
     /// the metadata of the response
     pub metas: MetaResponse,
+    /// xpath related dom and context
+    #[cfg(feature = "xpath")]
+    pub(crate) context: (Option<Document>, Option<Context>),
 }
+
+/// Safety:
+/// the safety of InnerResponse and MetaResponse is addressed repectively,
+/// the body is obviously Send and Sync
+/// xpath related dom and context can only be called when Response
+/// is successful and step into parse
+/// Since we parse the response's body in main thread, it should be Send and Sync
+unsafe impl Send for Response {}
+unsafe impl Sync for Response {}
 
 /// An Wrapper of [http::response::Parts]
 ///
@@ -187,6 +201,8 @@ impl Response {
             inner: InnerResponse::default(),
             body: Body::from(body),
             metas: MetaResponse::default(),
+            #[cfg(feature = "xpath")]
+            context: (None, None),
         }
     }
 
@@ -210,6 +226,8 @@ impl Response {
             inner,
             body: body,
             metas: meta,
+            #[cfg(feature = "xpath")]
+            context: (None, None),
         }
     }
 
@@ -442,6 +460,8 @@ impl Response {
             body: f(self.body),
             inner: self.inner,
             metas: self.metas,
+            #[cfg(feature = "xpath")]
+            context: self.context,
         }
     }
 }
@@ -721,6 +741,8 @@ impl ResponseBuilder {
             inner: self.inner,
             body: Body::from(body),
             metas: self.meta,
+            #[cfg(feature = "xpath")]
+            context: (None, None),
         }
     }
 }

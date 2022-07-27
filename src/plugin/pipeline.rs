@@ -113,7 +113,7 @@ impl<'pl, E, C> PipeLine<'pl, E, C> {
     /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
     /// let pipeline = Pipeline::builder()
     ///     .process_entity(process_entity)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// ```
     pub fn builder() -> PipeLineBuilder<'pl, E, C> {
         PipeLineBuilder::new()
@@ -128,7 +128,7 @@ impl<'pl, E, C> PipeLine<'pl, E, C> {
     /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
     /// let pipeline = Pipeline::builder()
     ///     .process_entity(process_entity)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.rank(), 0);
     /// ```
     pub fn rank(&self) -> i16 {
@@ -144,7 +144,7 @@ impl<'pl, E, C> PipeLine<'pl, E, C> {
     /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
     /// let pipeline = Pipeline::builder()
     ///     .process_entity(process_entity)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// pipeline.rank_mut() = 3;
     /// assert_eq!(pipeline.rank(), 3);
     /// ```
@@ -160,7 +160,7 @@ impl<'pl, E, C> PipeLine<'pl, E, C> {
     /// # use dyer::pipeLine::*;
     /// let mut pipeline = Pipeline::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// pipeline.extension_mut().insert(2i32);
     /// ```
     pub fn extensions_mut(&mut self) -> &mut Extensions {
@@ -175,7 +175,7 @@ impl<'pl, E, C> PipeLine<'pl, E, C> {
     /// # use dyer::pipeLine::*;
     /// let pipeline = Pipeline::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.extensions().get::<i32>(), 1);
     /// ```
     pub fn extensions(&self) -> &Extensions {
@@ -272,9 +272,9 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
     /// async fn process_entity(_: &mut Vec<E>, _: &mut App<E>) {}
     /// let pipeline = PipeLineBuilder::new();
     ///     .entity(process_entity)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// ```
-    pub fn build(self, marker: String) -> PipeLine<'pl, E, C> {
+    pub fn build<T: Into<String>>(self, marker: T) -> PipeLine<'pl, E, C> {
         let all = self.initializer.is_some()
             || self.disposer.is_some()
             || self.process_yerr.is_some()
@@ -285,7 +285,7 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
             disposer: self.disposer,
             process_entity: self.process_entity,
             process_yerr: self.process_yerr,
-            marker,
+            marker: marker.into(),
             rank: self.rank,
             extensions: self.extensions,
         }
@@ -299,7 +299,7 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
     /// # use dyer::pipeLine::*;
     /// let pipeline = Pipeline::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.extensions().get::<i32>(), 1);
     /// ```
     pub fn extensions<S>(mut self, extensions: S) -> Self
@@ -318,7 +318,7 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
     /// # use dyer::pipeLine::*;
     /// let pipeline = Pipeline::builder()
     ///     .extensions(1i32)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.extensions_ref().get::<i32>(), 1);
     /// ```
     pub fn extensions_ref(&self) -> &Extensions {
@@ -333,7 +333,7 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
     /// # use dyer::pipeLine::*;
     /// let pipeline = Pipeline::builder()
     ///     .rank(1)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.rank(), 1);
     /// ```
     pub fn rank(mut self, rank: i16) -> Self {
@@ -350,7 +350,7 @@ impl<'pl, E, C> PipeLineBuilder<'pl, E, C> {
     /// async fn process_entity(&mut Vec<E>, &mut App<E>) {}
     /// let pipeline = Pipeline::builder()
     ///     .rank(1)
-    ///     .build("marker".into());
+    ///     .build("marker");
     /// assert_eq!(pipeline.rank_ref(), 1);
     /// ```
     pub fn rank_ref(&self) -> i16 {
