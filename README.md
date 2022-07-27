@@ -34,6 +34,6 @@ The [Cookbook](https://homelyguy.github.io/dyer/) gives a detailed view of dyer.
 
 [dyer]: https://docs.rs/dyer
 [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
-[quick start]: https://github.com/HomelyGuy/dyer/tree/master/quick-start/
+[quick start]: https://github.com/HomelyGuy/dyer/tree/master/quick-start.md/
 [dyer-cli]: https://github.com/HomelyGuy/dyer-cli
 
