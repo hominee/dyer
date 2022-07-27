@@ -96,10 +96,16 @@ impl Hash for InnerTask {
     }
 }
 
-// Safety: since *const () is a static function pointer(a usize that indicating hardware address)
-// which is `Copy` so it owns the data, and no one else has it, the data can be safely transfered
-// to another thread
+/// Safety:
+/// since *const () is a static function pointer(a usize that indicating hardware address)
+/// which is `Copy` so it owns the data, and no one else has it, the data can be safely transfered
+/// to another thread
 unsafe impl Send for Task {}
+
+/// Safety:
+/// since *const () is a static function pointer(a usize that indicating hardware address)
+/// which is `Copy` so it owns the data, and no one else has it, the data can be safely transfered
+/// to another thread
 unsafe impl Sync for Task {}
 
 impl InnerTask {
@@ -392,6 +398,43 @@ impl Task {
         <Uri as TryFrom<S>>::Error: Into<http::Error>,
     {
         TaskBuilder::new().method(Method::TRACE).uri(uri)
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
+    /// get mutable reference to proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let mut task = Task::builder()
+    ///     .proxy("http://127.0.0.1:1088")
+    ///     .body(());
+    /// task.proxy_mut().unwrap().set_addr("http://127.0.0.1:1080");
+    /// assert!(task.proxy().unwrap().addr(), "http://127.0.0.1:1080");
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy_mut(&mut self) -> Option<&mut Proxy> {
+        self.proxy.as_mut()
+    }
+
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
+    /// get shared reference to proxy of `Task`
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # use dyer::proxy::*;
+    /// let task = Task::builder()
+    ///     .proxy("http://127.0.0.1:1088")
+    ///     .body(());
+    /// assert_eq!(task.proxy().unwrap().addr(), "http://127.0.0.1:1088" );
+    /// ```
+    #[cfg(feature = "proxy")]
+    pub fn proxy(&self) -> Option<&Proxy> {
+        self.proxy.as_ref()
     }
 }
 
@@ -830,7 +873,7 @@ impl Task {
         }
     }
 
-    /// Create new `Task` directly with body, inner data
+    /// Create new `Task` directly with body, inner data, proxy(require feature `proxy` enabled)
     ///
     /// # Examples
     ///
@@ -849,6 +892,22 @@ impl Task {
     pub fn from_parts(inner: InnerTask, body: Body, metat: MetaTask) -> Self {
         Self { inner, body, metat }
     }
+
+    /// Create new `Task` directly with body, inner data, proxy(require feature `proxy` enabled)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
+    /// let task = Task::builder()
+    ///     .get("https://example.com")
+    ///     .parser(parser_fn)
+    ///     .body(vec![1,2,3]);
+    /// let ( mut inner, body, meta ) = task.into_parts();
+    /// inner.version = Version::HTTP_3;
+    /// let new_task = Task::from_parts(inner, body, meta);
+    /// ```
     #[cfg(feature = "proxy")]
     pub fn from_parts(inner: InnerTask, body: Body, metat: MetaTask, proxy: Option<Proxy>) -> Self {
         Self {
@@ -859,7 +918,7 @@ impl Task {
         }
     }
 
-    /// split `Task` into body, inner data
+    /// split `Task` into body, inner data, proxy(require feature `proxy` enabled)
     ///
     /// # Examples
     ///
@@ -876,6 +935,20 @@ impl Task {
     pub fn into_parts(self) -> (InnerTask, Body, MetaTask) {
         (self.inner, self.body, self.metat)
     }
+
+    /// split `Task` into body, inner data, proxy(require feature `proxy` enabled)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # use dyer::task::*;
+    /// # fn parser_fn(_: Response ) -> Parsed<E,> { todo!() }
+    /// let task = Task::builder()
+    ///     .get("https://example.com")
+    ///     .parser(parser_fn)
+    ///     .body(vec![1,2,3]);
+    /// let (_inner, _body, _meta ) = task.into_parts();
+    /// ```
     #[cfg(feature = "proxy")]
     pub fn into_parts(self) -> (InnerTask, Body, MetaTask, Option<Proxy>) {
         (self.inner, self.body, self.metat, self.proxy)
@@ -1435,6 +1508,7 @@ impl TaskBuilder {
         self
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// get mutable reference to proxy of `Task`
     ///
     /// # Examples
@@ -1452,6 +1526,7 @@ impl TaskBuilder {
         self.proxy.as_mut()
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// set no-authentication proxy of `Task`
     ///
     /// # Examples
@@ -1475,6 +1550,7 @@ impl TaskBuilder {
         self
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// set basic-authentication proxy of `Task`
     ///
     /// # Examples
@@ -1501,6 +1577,7 @@ impl TaskBuilder {
         });
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// set bearer-authentication proxy of `Task`
     ///
     /// # Examples
@@ -1525,7 +1602,11 @@ impl TaskBuilder {
         });
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// set custom-authentication proxy of `Task`
+    ///
+    /// Note that raw token (encoded/Format) is directly feed to headers
+    /// be careful when using
     ///
     /// # Examples
     ///
@@ -1549,6 +1630,7 @@ impl TaskBuilder {
         });
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     /// get shared reference to proxy of `Task`
     ///
     /// # Examples

@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! [dyer] is designed for reliable, flexible and fast Request-Response based service, including data processing, web-crawling and so on, providing some friendly, interoperable, comprehensive  features without compromising speed.
 //!
 //! `dyer` provides some high-level features:  
@@ -27,9 +29,14 @@ pub mod component;
 pub mod engine;
 pub mod plugin;
 
+#[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 #[cfg(feature = "proxy")]
 #[doc(inline)]
-pub use component::proxy::{Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
+pub use component::proxy::{self, Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
+#[cfg(feature = "xpath")]
+#[doc(inline)]
+pub use component::xpath;
 #[doc(inline)]
 pub use component::{affix, body, client, couple, info, parsed, request, response, task, utils};
 #[doc(inline)]

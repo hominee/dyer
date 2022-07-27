@@ -467,7 +467,7 @@ impl Request {
         }
     }
 
-    /// Create new `Request` directly with body, inner data
+    /// Create new `Request` directly with body, inner data (require feature `proxy` enabled)
     ///
     /// # Examples
     ///
@@ -492,7 +492,7 @@ impl Request {
         }
     }
 
-    /// split `request` into body, inner data
+    /// split `request` into body, inner data, (require feature `proxy` enabled)
     ///
     /// # Examples
     ///
@@ -650,6 +650,8 @@ impl Request {
 }
 
 impl Request {
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
+    /// get the unique client id that will execute the request
     pub fn get_id(&self) -> u64 {
         #[cfg(feature = "proxy")]
         match self.proxy {
@@ -660,6 +662,8 @@ impl Request {
         0u64
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
+    /// get the client to execute the request
     pub fn get_client(&mut self) -> &'static Client {
         use crate::client::CLIENTPOOL;
         let id = self.get_id();

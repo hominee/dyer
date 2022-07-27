@@ -1,7 +1,6 @@
-//! the [Client] that asynchronously executes [Request], with specified `connect-timeout`, `read-timeout` and
-//! `write-timeout`.
+//! the [Client] that asynchronously executes [Request],
 //!
-//! Note that polling the `[Request]`s requires `tokio::runtime`.
+//! Note that polling the [Request] requires tokio runtime.
 
 use crate::component::Body;
 use crate::component::{utils, Request, Response};
@@ -18,17 +17,21 @@ use hyper_tls::HttpsConnector;
 use std::collections::HashMap;
 use std::io::{BufReader, Read};
 
-//type MClient = hyper::Client<HttpsConnector<HttpConnector>>;
 type ClientPlain = hyper::Client<HttpsConnector<HttpConnector>>;
 #[cfg(feature = "proxy")]
 type ClientProxy = hyper::Client<ProxyConnector<HttpConnector>>;
 
+/// represent an client that invoke make requests
 pub enum ClientType {
+    /// the plain https client
     Plain(ClientPlain),
+    #[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
     #[cfg(feature = "proxy")]
+    /// the proxy client
     Proxy(ClientProxy),
 }
 
+/// the Pool contains constructed Client
 pub static mut CLIENTPOOL: Option<HashMap<u64, Client>> = None;
 
 // TODO add proxy support
@@ -45,6 +48,7 @@ pub struct Client {
 }
 
 impl Client {
+    /// the https client
     pub fn new_plain() -> &'static Client {
         let id = 0;
         unsafe {

@@ -1,3 +1,6 @@
+//! implement the xpath for the response
+//! more to see [Response::xpath]
+
 use super::Response;
 use libxml::{
     parser::{ParseFormat, Parser},
@@ -5,8 +8,8 @@ use libxml::{
     xpath::Context,
 };
 
-/// implement the xpath for the response
 impl Response {
+    #[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
     /// initialize the context for the root html
     fn xpath_context(&mut self) {
         if self.context.0.is_none() || self.context.1.is_none() {
@@ -22,7 +25,9 @@ impl Response {
         }
     }
 
+    #[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
     /// parse the ready response's body with xpath
+    ///
     /// the feature `xpath` must be enabled
     /// ```rust
     /// let html = r#"<!doctype html>

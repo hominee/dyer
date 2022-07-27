@@ -31,6 +31,7 @@ pub struct Response {
     pub body: Body,
     /// the metadata of the response
     pub metas: MetaResponse,
+    #[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
     /// xpath related dom and context
     #[cfg(feature = "xpath")]
     pub(crate) context: (Option<Document>, Option<Context>),
@@ -43,6 +44,13 @@ pub struct Response {
 /// is successful and step into parse
 /// Since we parse the response's body in main thread, it should be Send and Sync
 unsafe impl Send for Response {}
+
+/// Safety:
+/// the safety of InnerResponse and MetaResponse is addressed repectively,
+/// the body is obviously Send and Sync
+/// xpath related dom and context can only be called when Response
+/// is successful and step into parse
+/// Since we parse the response's body in main thread, it should be Send and Sync
 unsafe impl Sync for Response {}
 
 /// An Wrapper of [http::response::Parts]

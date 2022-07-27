@@ -1,6 +1,6 @@
 [package]
 name = "dyer"
-version = "3.3.0"
+version = "3.3.2"
 authors = ["HomelyGuy"]
 edition = "2018"
 license = "MIT"
@@ -44,3 +44,7 @@ full = ["default", "compression", "xpath", "proxy"]
 [dev-dependencies]
 simple_logger = "1.11.0"
 #serde_json = "1.0.57"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

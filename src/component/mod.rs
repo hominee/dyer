@@ -23,12 +23,14 @@ pub mod client;
 pub mod couple;
 pub mod info;
 pub mod parsed;
+#[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 #[cfg(feature = "proxy")]
 pub mod proxy;
 pub mod request;
 pub mod response;
 pub mod task;
 pub mod utils;
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
 #[cfg(feature = "xpath")]
 pub mod xpath;
 
@@ -156,6 +158,7 @@ pub use hyper::body::{Buf, Bytes};
 pub use info::Info;
 #[doc(hidden)]
 pub use parsed::Parsed;
+#[cfg_attr(docsrs, doc(cfg(feature = "proxy")))]
 #[cfg(feature = "proxy")]
 #[doc(hidden)]
 pub use proxy::{Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
