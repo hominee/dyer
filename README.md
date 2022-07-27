@@ -26,7 +26,7 @@ To reduce code redundancy and speed up compilation, dyer use feature flag to mar
 
 ## Guide
 
-**Get started** by installing [dyer-cli] and looking over the [examples].
+**Get started** by installing [dyer-cli] and looking over the [examples] and [quick start].
 
 Crates: [Link 🔗](https://crates.io/crates/dyer/)   
 Documentation: [Link 🔗](https://docs.rs/dyer/latest/dyer)   
@@ -34,5 +34,6 @@ The [Cookbook](https://homelyguy.github.io/dyer/) gives a detailed view of dyer.
 
 [dyer]: https://docs.rs/dyer
 [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
+[quick start]: https://github.com/HomelyGuy/dyer/tree/master/quick-start/
 [dyer-cli]: https://github.com/HomelyGuy/dyer-cli
 
