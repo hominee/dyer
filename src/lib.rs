@@ -20,9 +20,9 @@
 //!
 //! **Get started** by installing [dyer-cli] and looking over the [examples].
 //!
-//! [dyer]: https://github.com/HomelyGuy/dyer
-//! [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
-//! [dyer-cli]: https://github.com/HomelyGuy/dyer-cli
+//! [dyer]: https://github.com/hominee/dyer
+//! [examples]: https://github.com/hominee/dyer/tree/master/examples/
+//! [dyer-cli]: https://github.com/hominee/dyer-cli
 //!
 
 pub mod component;

@@ -14,6 +14,8 @@ Make sure that [`rust`] (latest version recommended) and [`cargo`] are installed
 ```bash
 git clone --depth=1 https://github.com/HomelyGuy/dyer.git
 ```
+the `xpath` feature requires C library `libxml2` installed, you can refer to [rust-libxml](https://github.com/KWARC/rust-libxml) for more details.
+
 One more thing that this crate requires a safe popular cryptography library `OpenSSL`, some additional stuff is needed to compile. in general,
 ```bash
 # for debian-base OS

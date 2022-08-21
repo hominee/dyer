@@ -1,8 +1,8 @@
-# [dyer](https://github.com/homelyguy/dyer)
+# [dyer](https://github.com/hominee/dyer)
 
 [![API Document](https://img.shields.io/docsrs/dyer/latest)](https://docs.rs/dyer)
 [![crates.io](https://img.shields.io/crates/v/dyer.svg)](https://crates.io/crates/dyer)
-[![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://homelyguy.github.io/dyer/)
+[![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://hominee.github.io/dyer/)
 
 ## Overview
 
@@ -30,10 +30,10 @@ To reduce code redundancy and speed up compilation, dyer use feature flag to mar
 
 Crates: [Link 🔗](https://crates.io/crates/dyer/)   
 Documentation: [Link 🔗](https://docs.rs/dyer/latest/dyer)   
-The [Cookbook](https://homelyguy.github.io/dyer/) gives a detailed view of dyer.
+The [Cookbook](https://hominee.github.io/dyer/) gives a detailed view of dyer.
 
 [dyer]: https://docs.rs/dyer
-[examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
-[quick start]: https://github.com/HomelyGuy/dyer/tree/master/quick-start.md/
-[dyer-cli]: https://github.com/HomelyGuy/dyer-cli
+[examples]: https://github.com/hominee/dyer/tree/master/examples/
+[quick start]: https://github.com/hominee/dyer/tree/master/quick-start.md/
+[dyer-cli]: https://github.com/hominee/dyer-cli
 
