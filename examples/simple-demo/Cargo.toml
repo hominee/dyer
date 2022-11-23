@@ -15,7 +15,7 @@ path = "src/bin/simple_demo.rs"
 
 [dependencies]
 #dyer = { path = "../..", features = ["xpath", "proxy"]}
-dyer = { path = "../..", features = ["xpath"]}
+dyer = { path = "../..", features = ["xpath-alpha"]}
 serde = { version = "*", features = ["derive"] }
 tokio = { version = "1.20", features = ["rt-multi-thread"]}
 simple_logger = "*"

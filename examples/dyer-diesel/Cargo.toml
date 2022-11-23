@@ -15,7 +15,7 @@ name = "crawler"
 path = "src/bin/crawler.rs"
 
 [dependencies]
-dyer = { path = "../..", features=["xpath"] }
+dyer = { path = "../..", features=["xpath-alpha"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "*"
 tokio = { version = "1.20", features = ["rt-multi-thread"]}
