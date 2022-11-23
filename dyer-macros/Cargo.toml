@@ -8,7 +8,7 @@ keywords = ["dyer", "dyer-cli"]
 categories = ["network-programming", "web-programming"]
 description = " Dyer-macros is a collection of macros when compiling and building dyer."
 homepage = "https://crates.io/crates/dyer-macros"
-repository = "https://github.com/HomelyGuy/dyer"
+repository = "https://github.com/hominee/dyer"
 documentation = "https://docs.rs/dyer"
 readme = "README.md"
 

@@ -1,14 +1,14 @@
 [package]
 name = "dyer"
-version = "3.3.2"
-authors = ["HomelyGuy"]
+version = "3.3.3"
+authors = ["hominee"]
 edition = "2018"
 license = "MIT"
 keywords = [ "Request-Response", "data-processing", "web-crawling", "web-framework", "spider"]
 categories = ["network-programming", "web-programming"]
 description = " dyer is designed for reliable, flexible and fast Request-Response based service, including data processing, web-crawling and so on, providing some friendly, flexible, comprehensive  features without compromising speed."
 homepage = "https://crates.io/crates/dyer"
-repository = "https://github.com/HomelyGuy/dyer"
+repository = "https://github.com/hominee/dyer"
 documentation = "https://docs.rs/dyer"
 readme = "README.md"
 
@@ -28,18 +28,21 @@ flate2 = { version =  "1.0.20", optional = true }
 signal-hook = "0.1.17"
 log = "0.4.13"
 dyer-macros = {path = "dyer-macros/", version = "0.2.0"}
-#libxml = { git = "https://github.com/homelyguy/rust-libxml", rev="1eb47f0", optional = true }
 libxml = { version = "0.3.1", optional = true }
 hyper-proxy = { version = "0.9.1", optional = true }
 base64 = { version = "0.13.0", optional = true }
+sxd-document = { version="0.3.2", optional = true  }
+sxd-xpath = { version="0.4.2", optional = true } 
+regex = { version="1.7.0", optional = true } 
 
 [features]
 std = []
 default = []
 compression = ["default", "dep:brotli2", "dep:flate2"]
-xpath = ["dep:libxml"]
+xpath-alpha = ["dep:sxd-document", "dep:sxd-xpath", "dep:regex"]
+xpath-stable = ["dep:libxml"]
 proxy = ["dep:hyper-proxy", "dep:base64"]
-full = ["default", "compression", "xpath", "proxy"]
+full = ["default", "compression", "xpath-alpha", "proxy"]
 
 [dev-dependencies]
 simple_logger = "1.11.0"

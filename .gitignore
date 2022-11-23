@@ -11,10 +11,10 @@
 data/
 log/
 src/.* 
-*.swp
-*/*.swp
-*/*/*.swp
-*/*/*/*.swp
+*.sw*
+*/*.sw*
+*/*/*.sw*
+*/*/*/*.sw*
 *.json
 */*.json
 ideals.md

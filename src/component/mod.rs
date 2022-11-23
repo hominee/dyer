@@ -30,11 +30,23 @@ pub mod request;
 pub mod response;
 pub mod task;
 pub mod utils;
-#[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
-#[cfg(feature = "xpath")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath-alpha")))]
+#[cfg(feature = "xpath-alpha")]
 pub mod xpath;
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath-stable")))]
+#[cfg(feature = "xpath-stable")]
+pub mod xpath_stable;
 
 use std::convert::TryInto;
+
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "xpath-alpha", feature = "xpath-stable")))
+)]
+#[cfg(any(feature = "xpath-alpha", feature = "xpath-stable"))]
+pub trait ConcatText {
+    fn get_all_content(&self) -> String;
+}
 
 /// fundamental data struct
 pub enum Poly {

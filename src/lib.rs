@@ -13,16 +13,17 @@
 //! ## Feature Flag
 //! To reduce code redundancy and speed up compilation, dyer use feature flag to mark the necessary modules/functions, Currently here are some supported Features:
 //!
-//! - `xpath`: Enable parse the html response with xpath
+//! - `xpath-stable`: stably parse the response html with third-party C library `libxml2`   
+//! - `xpath-alpha`: rust-native parse the html response, **NOTE** that it is experimental
 //! - `compression`: Enable HTTP Compression: `br`, `deflate`, `gzip`
 //! - `proxy`: Enable use proxies
 //! - `full`: Enable all features
 //!
 //! **Get started** by installing [dyer-cli] and looking over the [examples].
 //!
-//! [dyer]: https://github.com/HomelyGuy/dyer
-//! [examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
-//! [dyer-cli]: https://github.com/HomelyGuy/dyer-cli
+//! [dyer]: https://github.com/hominee/dyer
+//! [examples]: https://github.com/hominee/dyer/tree/master/examples/
+//! [dyer-cli]: https://github.com/hominee/dyer-cli
 //!
 
 pub mod component;
@@ -33,25 +34,34 @@ pub mod plugin;
 #[cfg(feature = "proxy")]
 #[doc(inline)]
 pub use component::proxy::{self, Auth, AuthBasic, AuthBearer, AuthCustom, Proxy};
-#[cfg_attr(docsrs, doc(cfg(feature = "xpath")))]
-#[cfg(feature = "xpath")]
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath-alpha")))]
+#[cfg(feature = "xpath-alpha")]
 #[doc(inline)]
 pub use component::xpath;
+#[cfg_attr(docsrs, doc(cfg(feature = "xpath-stable")))]
+#[cfg(feature = "xpath-stable")]
+#[doc(inline)]
+pub use component::xpath_stable;
+#[cfg_attr(
+    docsrs,
+    doc(cfg(any(feature = "xpath-alpha", feature = "xpath-stable")))
+)]
+#[cfg(any(feature = "xpath-stable", feature = "xpath-alpha"))]
+#[doc(inline)]
+pub use component::ConcatText;
 #[doc(inline)]
 pub use component::{affix, body, client, couple, info, parsed, request, response, task, utils};
 #[doc(inline)]
 pub use component::{
     Affix, Body, Buf, Bytes, Client, ClientType, Couple, Info, MetaRequest, MetaResponse, MetaTask,
-    Parsed, Request, Response, Task, CLIENTPOOL,
+    Parsed, Request, Response, Task,
 };
 #[doc(inline)]
 pub use engine::{Actor, App, ArgAffix, ArgApp, ArgRate};
 #[doc(inline)]
 pub use http::Extensions;
 #[doc(inline)]
-pub use plugin::deser::FNMAP;
-#[doc(inline)]
-pub use plugin::{Affixor, MiddleWare, MiddleWareBuilder, PipeLine, PipeLineBuilder};
+pub use plugin::{Affixor, MiddleWare, MiddleWareBuilder, PipeLine, PipeLineBuilder, FNMAP};
 
 #[doc(inline)]
 pub use crate::plugin::{BoxFuture, LocalBoxFuture};

@@ -1,8 +1,8 @@
-# [dyer](https://github.com/homelyguy/dyer)
+# [dyer](https://github.com/hominee/dyer)
 
 [![API Document](https://img.shields.io/docsrs/dyer/latest)](https://docs.rs/dyer)
 [![crates.io](https://img.shields.io/crates/v/dyer.svg)](https://crates.io/crates/dyer)
-[![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://homelyguy.github.io/dyer/)
+[![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://hominee.github.io/dyer/)
 
 ## Overview
 
@@ -19,7 +19,8 @@ the rest of it interoperably.
 ## Feature Flag
 To reduce code redundancy and speed up compilation, dyer use feature flag to mark the necessary modules/functions, Currently here are some supported Features:
 
-- `xpath`: Enable parse the html response with xpath 
+- `xpath-stable`: stably parse the response html with third-party C library `libxml2`   
+- `xpath-alpha`: rust-native parse the html response, **NOTE** that it is experimental and unstale, remains to be improved  
 - `compression`: Enable HTTP Compression: `br`, `deflate`, `gzip`
 - `proxy`: Enable use proxies
 - `full`: Enable all features
@@ -28,9 +29,9 @@ To reduce code redundancy and speed up compilation, dyer use feature flag to mar
 
 **Get started** by installing [dyer-cli] and looking over the [examples].
 
-The [Cookbook](https://homelyguy.github.io/dyer/) gives a detailed view of dyer.
+The [Cookbook](https://hominee.github.io/dyer/) gives a detailed view of dyer.
 
 [dyer]: https://docs.rs/dyer
-[examples]: https://github.com/HomelyGuy/dyer/tree/master/examples/
-[dyer-cli]: https://github.com/HomelyGuy/dyer-cli
+[examples]: https://github.com/hominee/dyer/tree/master/examples/
+[dyer-cli]: https://github.com/hominee/dyer-cli
 
