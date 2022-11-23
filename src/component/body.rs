@@ -212,7 +212,12 @@ impl Body {
             .iter()
             .flat_map(|chunk| chunk.0.slice(0..))
             .collect()
-        //vec![]
+    }
+
+    pub fn to_string(&self) -> String {
+        use std::str::from_boxed_utf8_unchecked;
+        let bytes = self.bytes();
+        unsafe { from_boxed_utf8_unchecked(bytes.into_boxed_slice()).into() }
     }
 }
 
@@ -221,6 +226,11 @@ fn test_bytes() {
     let mut body = Body::from("Hello ");
     body.extend([Chunk::from("World!")]);
     assert_eq!(body.bytes()[..], b"Hello World!"[..]);
+
+    let s = "你好呀 Hello dyer";
+    let item = Body::from(s);
+    println!("{:?}", &item.to_string());
+    //assert_eq!(1, 2);
 }
 
 /*
