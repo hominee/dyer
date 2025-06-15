@@ -4,6 +4,9 @@
 [![crates.io](https://img.shields.io/crates/v/dyer.svg)](https://crates.io/crates/dyer)
 [![Cookbook](https://img.shields.io/static/v1?label=cookbook&message=dyer&color=green)](https://hominee.github.io/dyer/)
 
+## special thinks
+[![Powered by DartNode](https://dartnode.com/branding/DN-Open-Source-sm.png)](https://dartnode.com "Powered by DartNode - Free VPS for Open Source")
+
 ## Overview
 
 [dyer] is designed for reliable, flexible and fast Request-Response based service, including data processing, web-crawling and so on, providing some friendly,  interoperable, comprehensive  features without compromising speed.
